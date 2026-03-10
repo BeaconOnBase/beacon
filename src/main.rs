@@ -6,6 +6,9 @@ mod generator;
 mod validator;
 mod models;
 
+#[cfg(test)]
+mod tests;
+
 use clap::{Parser, Subcommand};
 use rand::seq::SliceRandom;
 
