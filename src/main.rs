@@ -374,14 +374,14 @@ async fn main() -> AnyResult<()> {
             db::run_migrations(&pool).await?;
 
             // Initialize Redis (Cloud API State)
-            let redis_url = std::env::var("REDIS_URL").context("REDIS_URL not set")?;
+            let redis_url = std::env::var("REDIS_URL").context("REDIS_URL must be set")?;
             let redis_client = Arc::new(redis::Client::open(redis_url)?);
             let cloud_state = AppState {
                 redis_client,
             };
 
             // Setup Main Router (Farcaster API)
-            let farcaster_state = farcaster::api::AppState { pool };
+            let farcaster_state = farcaster::api::AppState { pool: pool.clone() };
             let app = farcaster::api::router(farcaster_state);
 
             // Merge with Cloud API routes
@@ -405,6 +405,37 @@ async fn main() -> AnyResult<()> {
             } else {
                 app
             };
+
+            // Optionally spawn Farcaster Bot if NEYNAR_API_KEY is present
+            if std::env::var("NEYNAR_API_KEY").is_ok() {
+                println!("{} Spawning Farcaster Bot...", random_emoji());
+                let neynar = Arc::new(farcaster::neynar::NeynarClient::from_env()?);
+                let channel = std::env::var("FARCASTER_CHANNEL").unwrap_or_else(|_| "beacon-agents".into());
+                let config = farcaster::bot::BotConfig::new(channel.clone(), 30, "gemini".into());
+                let pool_clone = pool.clone();
+                let neynar_bot = neynar.clone();
+                
+                tokio::spawn(async move {
+                    if let Err(e) = farcaster::bot::run_bot(neynar_bot, config, pool_clone).await {
+                        tracing::error!("Farcaster bot error: {}", e);
+                    }
+                });
+
+                // Spawn event listener if agency address is configured
+                if let Ok(addr) = std::env::var("BEACON_AGENCY_ADDRESS") {
+                    let neynar_events = neynar.clone();
+                    let channel_events = channel.clone();
+                    tokio::spawn(async move {
+                        if let Err(e) = farcaster::bot::run_event_listener(
+                            neynar_events,
+                            channel_events,
+                            addr,
+                        ).await {
+                            tracing::error!("Event listener error: {}", e);
+                        }
+                    });
+                }
+            }
 
             let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{}", port)).await?;
             println!("⬛ Beacon server running at http://0.0.0.0:{}", port);
