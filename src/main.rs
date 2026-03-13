@@ -289,11 +289,59 @@ async fn main() -> AnyResult<()> {
             generator::generate_agents_md(&manifest, &output)?;
             println!("\n✅ Done! AGENTS.md written to: {}", output);
         }
-        Commands::Validate { file } => {
+        Commands::Validate {
+            file,
+            check_endpoints,
+            provider,
+        } => {
             println!("{} Beacon — validating {}...", random_emoji(), file);
-            let result = validator::validate_file(&file)?;
+            let content =
+                std::fs::read_to_string(&file).map_err(|_| anyhow::anyhow!("File not found: {}", file))?;
+
+            let mut result = if let Some(p) = provider {
+                if p == "beacon-ai-cloud" {
+                    validator::validate_cloud(&content).await?
+                } else {
+                    validator::validate_content(&content)?
+                }
+            } else {
+                validator::validate_content(&content)?
+            };
+
+            if check_endpoints {
+                println!("   🌐 Checking endpoint reachability...");
+                result.endpoint_results = validator::check_endpoints(&content).await?;
+            }
+
             println!("\n📋 Validation Report");
             println!("   Valid:    {}", if result.valid { "✅ Yes" } else { "❌ No" });
+            println!("   Errors:   {}", result.errors.len());
+            println!("   Warnings: {}", result.warnings.len());
+            
+            if !result.errors.is_empty() {
+                println!("\n❌ Errors:");
+                for e in &result.errors {
+                    println!("   • {}", e);
+                }
+            }
+            if !result.warnings.is_empty() {
+                println!("\n⚠️  Warnings:");
+                for w in &result.warnings {
+                    println!("   • {}", w);
+                }
+            }
+            if !result.endpoint_results.is_empty() {
+                println!("\n🌐 Endpoint Results:");
+                for ep in &result.endpoint_results {
+                    let status = ep.status_code.map(|s| s.to_string()).unwrap_or_else(|| "—".to_string());
+                    println!(
+                        "   {} {} ({})",
+                        if ep.reachable { "✅" } else { "❌" },
+                        ep.endpoint,
+                        status
+                    );
+                }
+            }
         }
         Commands::Serve { port } => {
             let redis_url = std::env::var("REDIS_URL").context("REDIS_URL not set")?;
