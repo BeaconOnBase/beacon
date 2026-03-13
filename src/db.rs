@@ -17,8 +17,6 @@ pub struct Run {
     pub error: Option<String>,
 }
 
-
-
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Payment {
     pub id: String,
@@ -40,9 +38,6 @@ fn client() -> Result<postgrest::Postgrest> {
         .insert_header("apikey", &key)
         .insert_header("Authorization", format!("Bearer {}", key)))
 }
-
-
-
 
 pub async fn create_run(repo_name: &str) -> Result<String> {
     let db = client()?;
@@ -79,10 +74,7 @@ pub async fn mark_run_paid(run_id: &str, txn_hash: &str, chain: &str) -> Result<
     Ok(())
 }
 
-
-
 pub async fn mark_run_complete(run_id: &str, agents_md: &str) -> Result<()> {
-
     let db = client()?;
 
     db.from(RUNS_TABLE)
@@ -113,8 +105,6 @@ pub async fn mark_run_failed(run_id: &str, error: &str) -> Result<()> {
 
     Ok(())
 }
-
-
 
 pub async fn record_payment(
     run_id: &str,
