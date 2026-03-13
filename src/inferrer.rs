@@ -104,6 +104,39 @@ async fn call_claude(prompt: &str, api_key: &str) -> Result<AgentsManifest> {
     parse_manifest(text)
 }
 
+async fn call_openai(prompt: &str, api_key: &str) -> Result<AgentsManifest> {
+    let response = CLIENT
+        .post(OPENAI_URL)
+        .bearer_auth(api_key)
+        .json(&json!({
+            "model": "gpt-4o",
+            "temperature": 0.2,
+            "response_format": { "type": "json_object" },
+            "messages": [
+                {
+                    "role": "system",
+                    "content": "You are an expert at analyzing software repositories. Always respond with valid JSON only."
+                },
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+            ]
+        }))
+        .send()
+        .await
+        .context("Failed to reach OpenAI API")?;
+
+    check_status(&response, "OpenAI")?;
+
+    let raw: Value = response.json().await?;
+    let text = raw["choices"][0]["message"]["content"]
+        .as_str()
+        .context("Unexpected OpenAI response shape")?;
+
+    parse_manifest(text)
+}
+
 fn resolve_key(cli_key: Option<&str>, env_var: &str, provider: &str) -> Result<String> {
     if let Some(key) = cli_key {
         return Ok(key.to_string());
