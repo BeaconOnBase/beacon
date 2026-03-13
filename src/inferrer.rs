@@ -15,6 +15,8 @@ const GEMINI_URL: &str =
     "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent";
 const CLAUDE_URL: &str =
     "https://api.anthropic.com/v1/messages";
+const OPENAI_URL: &str =
+    "https://api.openai.com/v1/chat/completions";
 
 pub async fn infer_capabilities(
     ctx: &RepoContext,
@@ -34,8 +36,12 @@ pub async fn infer_capabilities(
             let key = resolve_key(api_key, "CLAUDE_API_KEY", "claude")?;
             call_claude(&prompt, &key).await?
         }
+        "openai" => {
+            let key = resolve_key(api_key, "OPENAI_API_KEY", "openai")?;
+            call_openai(&prompt, &key).await?
+        }
         other => anyhow::bail!(
-            "Unknown provider '{}'. Valid options for Stage 1: gemini, claude",
+            "Unknown provider '{}'. Valid options: gemini, claude, openai",
             other
         ),
     };
@@ -94,6 +100,39 @@ async fn call_claude(prompt: &str, api_key: &str) -> Result<AgentsManifest> {
     let text = raw["content"][0]["text"]
         .as_str()
         .context("Unexpected Claude response shape")?;
+
+    parse_manifest(text)
+}
+
+async fn call_openai(prompt: &str, api_key: &str) -> Result<AgentsManifest> {
+    let response = CLIENT
+        .post(OPENAI_URL)
+        .bearer_auth(api_key)
+        .json(&json!({
+            "model": "gpt-4o",
+            "temperature": 0.2,
+            "response_format": { "type": "json_object" },
+            "messages": [
+                {
+                    "role": "system",
+                    "content": "You are an expert at analyzing software repositories. Always respond with valid JSON only."
+                },
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+            ]
+        }))
+        .send()
+        .await
+        .context("Failed to reach OpenAI API")?;
+
+    check_status(&response, "OpenAI")?;
+
+    let raw: Value = response.json().await?;
+    let text = raw["choices"][0]["message"]["content"]
+        .as_str()
+        .context("Unexpected OpenAI response shape")?;
 
     parse_manifest(text)
 }
