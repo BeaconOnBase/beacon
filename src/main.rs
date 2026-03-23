@@ -13,6 +13,8 @@ mod mcp;
 mod tests;
 mod db;
 
+mod farcaster;
+
 use anyhow::{Result as AnyResult, Context};
 use axum::{
     extract::State,

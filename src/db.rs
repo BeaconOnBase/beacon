@@ -1,11 +1,49 @@
 use anyhow::{Result, Context};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use uuid::Uuid;
+use crate::models::AgentsManifest;
 
 const RUNS_TABLE: &str = "runs";
 const PAYMENTS_TABLE: &str = "payments";
+const AGENT_MANIFESTS_TABLE: &str = "agent_manifests";
+const FARCASTER_SCANS_TABLE: &str = "farcaster_scans";
+
+#[derive(Clone)]
+pub struct DbPool {
+    client: postgrest::Postgrest,
+}
+
+impl DbPool {
+    pub fn new() -> Result<Self> {
+        let url = std::env::var("SUPABASE_URL")
+            .context("SUPABASE_URL not set")?;
+        let key = std::env::var("SUPABASE_SERVICE_KEY")
+            .context("SUPABASE_SERVICE_KEY not set")?;
+
+        let client = postgrest::Postgrest::new(format!("{}/rest/v1", url))
+            .insert_header("apikey", &key)
+            .insert_header("Authorization", format!("Bearer {}", key));
+
+        Ok(Self { client })
+    }
+}
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct AgentManifestRow {
+    pub id: Uuid,
+    pub run_id: Option<String>,
+    pub name: String,
+    pub description: String,
+    pub manifest_json: serde_json::Value,
+    pub capabilities_count: i32,
+    pub endpoints_count: i32,
+    pub on_chain_id: Option<String>,
+    pub fid: Option<i64>,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Run {
     pub id: String,
     pub repo_name: String,
@@ -157,4 +195,129 @@ pub async fn payment_already_used(txn_hash: &str) -> Result<bool> {
     let body = resp.text().await?;
     let records: serde_json::Value = serde_json::from_str(&body)?;
     Ok(records.as_array().map(|a| !a.is_empty()).unwrap_or(false))
+}
+
+// Farcaster bot database functions
+
+pub async fn scan_exists(pool: &DbPool, cast_hash: &str) -> Result<bool> {
+    let resp = pool.client.from(FARCASTER_SCANS_TABLE)
+        .eq("cast_hash", cast_hash)
+        .select("id")
+        .execute()
+        .await
+        .context("Failed to check scan")?;
+
+    let body = resp.text().await?;
+    let records: serde_json::Value = serde_json::from_str(&body)?;
+    Ok(records.as_array().map(|a| !a.is_empty()).unwrap_or(false))
+}
+
+pub async fn insert_farcaster_scan(pool: &DbPool, cast_hash: &str, github_url: &str) -> Result<Uuid> {
+    let id = Uuid::new_v4();
+    
+    pool.client.from(FARCASTER_SCANS_TABLE)
+        .insert(json!([{
+            "id": id.to_string(),
+            "cast_hash": cast_hash,
+            "github_url": github_url,
+            "status": "pending"
+        }]).to_string())
+        .execute()
+        .await
+        .context("Failed to insert farcaster scan")?;
+
+    Ok(id)
+}
+
+pub async fn update_farcaster_scan(
+    pool: &DbPool,
+    id: Uuid,
+    status: &str,
+    agents_md: Option<&str>,
+    reply_hash: Option<&str>,
+) -> Result<()> {
+    let mut update_data = json!({
+        "status": status
+    });
+
+    if let Some(md) = agents_md {
+        update_data["agents_md"] = json!(md);
+    }
+    if let Some(reply) = reply_hash {
+        update_data["reply_hash"] = json!(reply);
+    }
+
+    pool.client.from(FARCASTER_SCANS_TABLE)
+        .eq("id", id.to_string())
+        .update(update_data.to_string())
+        .execute()
+        .await
+        .context("Failed to update farcaster scan")?;
+
+    Ok(())
+}
+
+pub async fn insert_agent_manifest(
+    pool: &DbPool,
+    manifest: &AgentsManifest,
+    on_chain_id: Option<&str>,
+    fid: i64,
+) -> Result<Uuid> {
+    let id = Uuid::new_v4();
+    let manifest_json = serde_json::to_value(manifest)?;
+
+    pool.client.from(AGENT_MANIFESTS_TABLE)
+        .insert(json!([{
+            "id": id.to_string(),
+            "run_id": Option::<String>::None,
+            "name": manifest.name,
+            "description": manifest.description,
+            "manifest_json": manifest_json,
+            "capabilities_count": manifest.capabilities.len() as i32,
+            "endpoints_count": manifest.endpoints.len() as i32,
+            "on_chain_id": on_chain_id,
+            "fid": fid,
+            "created_at": chrono::Utc::now().to_rfc3339()
+        }]).to_string())
+        .execute()
+        .await
+        .context("Failed to insert agent manifest")?;
+
+    Ok(id)
+}
+
+pub async fn get_agent(pool: &DbPool, id: Uuid) -> Result<Option<AgentManifestRow>> {
+    let resp = pool.client.from(AGENT_MANIFESTS_TABLE)
+        .eq("id", id.to_string())
+        .select("*")
+        .execute()
+        .await
+        .context("Failed to get agent")?;
+
+    let body = resp.text().await?;
+    let records: Vec<AgentManifestRow> = serde_json::from_str(&body)?;
+    Ok(records.into_iter().next())
+}
+
+pub async fn search_agents(
+    pool: &DbPool,
+    query: Option<&str>,
+    limit: i64,
+    offset: i64,
+) -> Result<Vec<AgentManifestRow>> {
+    let mut req = pool.client.from(AGENT_MANIFESTS_TABLE)
+        .select("*")
+        .limit(limit)
+        .offset(offset);
+
+    if let Some(q) = query {
+        req = req.or_filter(json!({
+            "name": { "ilike": format!("%{}%", q) }
+        }).to_string());
+    }
+
+    let resp = req.execute().await.context("Failed to search agents")?;
+    let body = resp.text().await?;
+    let records: Vec<AgentManifestRow> = serde_json::from_str(&body)?;
+    Ok(records)
 }

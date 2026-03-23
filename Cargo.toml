@@ -36,6 +36,8 @@ hex = "0.4"
 once_cell = "1.19"
 rust-mcp-sdk = { version = "0.8.3", features = ["server", "hyper-server", "macros"] }
 async-trait = "0.1"
+base64 = "0.21"
+url = "2"
 
 [dev-dependencies]
 axum-test = "15"
