@@ -553,8 +553,8 @@ async fn main() -> AnyResult<()> {
                 .with_route("/generate", post(handle_generate).with_state(state))
                 .with_route("/api/registry", get(handle_registry_search))
                 .with_route("/api/registry", post(handle_registry_register))
-                .with_route("/api/registry/:id", get(handle_registry_get))
-                .with_route("/api/basenames/resolve/:name", get(handle_basename_resolve));
+                .with_route("/api/registry/{id}", get(handle_registry_get))
+                .with_route("/api/basenames/resolve/{name}", get(handle_basename_resolve));
 
             println!("{} Beacon API & MCP Server", random_emoji());
             println!("   http://0.0.0.0:{}", port);
@@ -562,8 +562,8 @@ async fn main() -> AnyResult<()> {
             println!("   POST /validate             — validate an AGENTS.md file");
             println!("   GET  /api/registry         — search/browse agent registry");
             println!("   POST /api/registry         — register an agent");
-            println!("   GET  /api/registry/:id     — get agent by ID");
-            println!("   GET  /api/basenames/:name  — resolve a basename");
+            println!("   GET  /api/registry/{{id}}     — get agent by ID");
+            println!("   GET  /api/basenames/{{name}}  — resolve a basename");
             println!("   GET  /sse                  — MCP Server (SSE)");
             println!("   GET  /health               — health check");
 
