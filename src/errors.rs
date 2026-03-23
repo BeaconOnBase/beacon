@@ -8,16 +8,16 @@ use axum::{
 
 #[derive(Error, Debug)]
 pub enum BeaconError {
-    #[error("{0}")]
+    #[error("Scanning failed: {0}")]
     ScanError(String),
 
-    #[error("{0}")]
+    #[error("Inference failed: {0}")]
     InferenceError(String),
 
-    #[error("{0}")]
+    #[error("Validation failed: {0}")]
     ValidationError(String),
 
-    #[error("payment required")]
+    #[error("Payment required to proceed")]
     PaymentRequired {
         run_id: String,
         amount: String,
@@ -25,28 +25,28 @@ pub enum BeaconError {
         sol_addr: String,
     },
 
-    #[error("{status} - {message}")]
+    #[error("Beacon Cloud returned an error: {status} - {message}")]
     CloudError {
         status: u16,
         message: String,
     },
 
-    #[error("{0}")]
+    #[error("Failed to parse response from Beacon Cloud: {0}")]
     ParseError(String),
 
-    #[error(transparent)]
+    #[error("Network error: {0}")]
     NetworkError(#[from] reqwest::Error),
 
-    #[error("{0}")]
+    #[error("Database error: {0}")]
     DatabaseError(String),
 
-    #[error("transaction hash already used")]
+    #[error("Transaction hash already used")]
     TransactionAlreadyUsed,
 
-    #[error(transparent)]
+    #[error("IO error: {0}")]
     IoError(#[from] std::io::Error),
 
-    #[error("{0}")]
+    #[error("Unknown error: {0}")]
     Unknown(String),
 }
 

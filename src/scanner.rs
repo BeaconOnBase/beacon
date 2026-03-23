@@ -3,6 +3,7 @@ use walkdir::WalkDir;
 use anyhow::Result;
 use crate::models::{RepoContext, SourceFile, Language};
 
+// Files/dirs to always skip
 const SKIP_DIRS: &[&str] = &[
     "target", "node_modules", ".git", ".github", "dist",
     "build", "__pycache__", ".venv", "venv",
@@ -12,7 +13,9 @@ const SKIP_FILES: &[&str] = &[
     ".DS_Store", "Thumbs.db", "*.lock", "*.sum",
 ];
 
+
 const MAX_FILE_BYTES: u64 = 50_000;
+
 const MAX_SOURCE_FILES: usize = 50;
 
 pub fn scan_local(repo_path: &str) -> Result<RepoContext> {
@@ -81,6 +84,7 @@ pub fn scan_local(repo_path: &str) -> Result<RepoContext> {
             println!("   ✓ Package manifest found: {}", filename);
             continue;
         }
+
 
         if is_openapi(path) {
             ctx.openapi_spec = read_file(path).ok();

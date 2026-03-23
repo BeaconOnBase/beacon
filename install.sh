@@ -1,7 +1,7 @@
 #!/usr/bin/env sh
 set -e
 
-REPO="BeaconOnBase/beacon"
+REPO="DavidNzube101/beacon"
 INSTALL_DIR="/usr/local/bin"
 
 # Get binary name from first argument (default: beacon)
@@ -52,20 +52,23 @@ get_target() {
     esac
 }
 
+# --- Rigorous Conflict Detection ---
+# We use a perfect combination of checks to identify our binary
 is_our_binary() {
     path="$1"
     [ -x "$path" ] || return 1
     
-    # Check version format
+    # 1. Check version format (must start with "beacon X.Y.Z")
     "$path" --version 2>&1 | grep -q "^beacon [0-9]" || return 1
     
-    # Check for tagline
+    # 2. Check for the unique project tagline
     help_text=$("$path" --help 2>&1)
     echo "$help_text" | grep -q "agent-ready" || return 1
     
-    # Verify core commands exist
+    # 3. Verify the core command set exists
     echo "$help_text" | grep -q "generate" || return 1
     echo "$help_text" | grep -q "validate" || return 1
+    echo "$help_text" | grep -q "serve" || return 1
     
     return 0
 }
@@ -76,8 +79,9 @@ if [ -e "$INSTALL_DIR/$BINARY" ]; then
     else
         echo "Error: A file named '$BINARY' already exists in $INSTALL_DIR and does not appear to be Beacon."
         echo "To install Beacon with a different name, pass it as an argument:"
-        echo "  curl -fsSL https://raw.githubusercontent.com/BeaconOnBase/beacon/master/install.sh | sh -s -- your-custom-name"
+        echo "  curl -fsSL https://raw.githubusercontent.com/DavidNzube101/beacon/master/install.sh | sh -s -- your-custom-name"
         echo ""
+        echo "Example: curl ... | sh -s -- beacon-ai $VERSION"
         exit 1
     fi
 fi

@@ -6,7 +6,7 @@ on:
       - 'v*'
 
 permissions:
-  contents: write
+  contents: read
   packages: write
 
 jobs:
@@ -34,9 +34,11 @@ jobs:
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Lowercase repo name
-        id: repo
-        run: echo "name=${GITHUB_REPOSITORY,,}" >> $GITHUB_OUTPUT
+      - name: Extract metadata (tags, labels) for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
@@ -44,9 +46,8 @@ jobs:
           context: .
           file: ./Dockerfile
           push: true
-          tags: |
-            ghcr.io/${{ steps.repo.outputs.name }}:latest
-            ghcr.io/${{ steps.repo.outputs.name }}:${{ github.ref_name }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
 
   build:
     name: Build — ${{ matrix.target }}
@@ -55,10 +56,10 @@ jobs:
     strategy:
       matrix:
         include:
-          - target: x86_64-unknown-linux-musl
+          - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
             artifact: beacon-linux-x86_64
-          - target: aarch64-unknown-linux-musl
+          - target: aarch64-unknown-linux-gnu
             os: ubuntu-latest
             artifact: beacon-linux-arm64
           - target: x86_64-apple-darwin
@@ -79,20 +80,15 @@ jobs:
           targets: ${{ matrix.target }}
 
       - name: Install cross-compilation tools
-        if: startsWith(matrix.target, 'aarch64-unknown-linux')
+        if: matrix.target == 'aarch64-unknown-linux-gnu'
         run: |
           sudo apt-get update
-          sudo apt-get install -y gcc-aarch64-linux-gnu musl-tools
-
-      - name: Install musl-tools (x86_64)
-        if: matrix.target == 'x86_64-unknown-linux-musl'
-        run: sudo apt-get update && sudo apt-get install -y musl-tools
+          sudo apt-get install -y gcc-aarch64-linux-gnu
 
       - name: Build
         run: cargo build --release --target ${{ matrix.target }}
         env:
-          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER: aarch64-linux-gnu-gcc
-          CC_aarch64_unknown_linux_musl: aarch64-linux-gnu-gcc
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
 
       - name: Rename binary (Unix)
         if: matrix.os != 'windows-latest'

@@ -4,7 +4,7 @@ use crate::models::{ValidationResult, EndpointCheckResult};
 use crate::errors::BeaconError;
 use serde_json::{json, Value};
 
-const BEACON_CLOUD_URL: &str = "https://beacon-latest.onrender.com";
+const BEACON_CLOUD_URL: &str = "https://api.beaconcloud.org";
 
 pub async fn validate_cloud(content: &str) -> Result<ValidationResult> {
     let client = Client::new();
@@ -15,6 +15,7 @@ pub async fn validate_cloud(content: &str) -> Result<ValidationResult> {
     println!("   ⚡️ Contacting Beacon Cloud for validation...");
 
     let payload = json!({
+        "provider": "beacon-ai-cloud",
         "content": content
     });
 
@@ -167,15 +168,18 @@ pub fn validate_content(content: &str) -> Result<ValidationResult> {
         valid,
         errors,
         warnings,
-        endpoint_results: vec![],
+        endpoint_results: vec![], // gonna be filled by check_endpoints
     })
 }
 
 pub async fn check_endpoints(content: &str) -> Result<Vec<EndpointCheckResult>> {
     let client = Client::new();
     let mut results = vec![];
+
+    
     let base_url = extract_base_url(content);
 
+    
     for line in content.lines() {
         if !line.starts_with("### `") {
             continue;
@@ -188,6 +192,7 @@ pub async fn check_endpoints(content: &str) -> Result<Vec<EndpointCheckResult>> 
         let method = parts[0];
         let path = parts[1];
 
+        
         let url = if path.starts_with("http") {
             path.to_string()
         } else if let Some(base) = &base_url {

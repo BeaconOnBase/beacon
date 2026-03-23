@@ -1,8 +1,8 @@
-# AGENTS.md — beacon-v2
+# AGENTS.md — beacon
 
-> Beacon is a tool designed for the Web 4.0 agentic economy. It scans your codebase, infers its capabilities using AI, and generates a standards-compliant AGENTS.md manifest, making any repository agent-ready instantly.
+> Beacon is a Rust-based tool that scans a codebase, infers its agent-usable capabilities using AI, and generates a standards-compliant AGENTS.md file, making the repository discoverable by autonomous agents. It can be used as a CLI tool or a web API.
 
-**Version:** 0.1.0
+**Version:** 0.2.2
 
 ---
 
@@ -10,7 +10,7 @@
 
 **Type:** `none`
 
-This is a CLI tool and does not expose an API that requires authentication. API keys are required for external AI providers it consumes.
+The Beacon API endpoints themselves do not require direct client authentication. AI provider API keys (e.g., GEMINI_API_KEY) must be configured as environment variables on the server running the Beacon service. For 'beacon-ai-cloud', payment via USDC is handled internally.
 
 ---
 
@@ -18,9 +18,9 @@ This is a CLI tool and does not expose an API that requires authentication. API 
 
 What an agent can do with this repository:
 
-### `generate_agents_manifest`
+### `generate_agents_md`
 
-Scans a given repository path, uses AI (Gemini or Claude) to infer its capabilities, endpoints, and schemas, and then generates a standards-compliant AGENTS.md manifest file.
+Scans a repository (local path or GitHub URL) and generates an AGENTS.md file describing its agent-usable capabilities, endpoints, and authentication. It uses various AI providers (Gemini, Claude, OpenAI, Beacon Cloud) for inference.
 
 **Input:**
 
@@ -28,23 +28,19 @@ Scans a given repository path, uses AI (Gemini or Claude) to infer its capabilit
 {
   "properties": {
     "api_key": {
-      "description": "The API key for the selected AI provider. Can also be set via environment variables (GEMINI_API_KEY or CLAUDE_API_KEY).",
+      "description": "API key for the chosen AI provider, if not set via environment variable.",
       "type": "string"
     },
     "output": {
-      "description": "The path where the AGENTS.md manifest should be written. Defaults to 'AGENTS.md'.",
+      "description": "The path where the AGENTS.md file should be written (default: AGENTS.md).",
       "type": "string"
     },
     "provider": {
-      "description": "The AI provider to use for inference. Defaults to 'gemini'.",
-      "enum": [
-        "gemini",
-        "claude"
-      ],
+      "description": "The AI provider to use for inference (e.g., 'gemini', 'claude', 'openai', 'beacon-ai-cloud'). Defaults to 'gemini'.",
       "type": "string"
     },
     "target": {
-      "description": "The path to the repository to scan.",
+      "description": "The path to the local repository or a GitHub URL.",
       "type": "string"
     }
   },
@@ -55,14 +51,23 @@ Scans a given repository path, uses AI (Gemini or Claude) to infer its capabilit
 }
 ```
 
+**Output:**
+
+```json
+{
+  "description": "Path to the generated AGENTS.md file.",
+  "type": "string"
+}
+```
+
 **Examples:**
 
-- export GEMINI_API_KEY=your_key; beacon generate ./my-project
-- beacon generate ./another-project --provider claude --api-key sk-xxxx --output docs/AGENTS.md
+- beacon generate ./my-project
+- beacon generate https://github.com/user/repo --provider openai --api-key sk-...
 
-### `validate_agents_manifest`
+### `validate_agents_md`
 
-Validates an existing AGENTS.md manifest file for compliance with AAIF standards and best practices, reporting any errors or warnings.
+Validates the structure and content of an AGENTS.md file against the expected schema.
 
 **Input:**
 
@@ -81,11 +86,131 @@ Validates an existing AGENTS.md manifest file for compliance with AAIF standards
 }
 ```
 
+**Output:**
+
+```json
+{
+  "properties": {
+    "errors": {
+      "description": "A list of validation errors, if any.",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "is_valid": {
+      "description": "True if the AGENTS.md is valid, false otherwise.",
+      "type": "boolean"
+    }
+  },
+  "type": "object"
+}
+```
+
 **Examples:**
 
-- beacon validate AGENTS.md
-- beacon validate ./docs/AGENTS.md
+- beacon validate ./AGENTS.md
+
+### `validate_agents_md_with_endpoint_check`
+
+Validates an AGENTS.md file and additionally checks the reachability of any declared endpoints within it.
+
+**Input:**
+
+```json
+{
+  "properties": {
+    "file": {
+      "description": "The path to the AGENTS.md file to validate.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "file"
+  ],
+  "type": "object"
+}
+```
+
+**Output:**
+
+```json
+{
+  "properties": {
+    "endpoint_checks": {
+      "description": "Results of endpoint reachability checks.",
+      "items": {
+        "properties": {
+          "error": {
+            "type": "string"
+          },
+          "method": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "errors": {
+      "description": "A list of validation and endpoint check errors, if any.",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "is_valid": {
+      "description": "True if the AGENTS.md is valid and endpoints are reachable, false otherwise.",
+      "type": "boolean"
+    }
+  },
+  "type": "object"
+}
+```
+
+**Examples:**
+
+- beacon validate ./AGENTS.md --check-endpoints
 
 ---
 
-*Generated by [Beacon](https://github.com/BeaconOnBase/beacon) — Make any repo agent-ready. Instantly.*
+## Endpoints
+
+### `GET /health`
+
+Checks the health status of the Beacon API server.
+
+### `POST /generate`
+
+Triggers the generation of an AGENTS.md file for a specified repository. The AI provider API key must be configured on the server via environment variables (e.g., GEMINI_API_KEY).
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `repo_url` | `string` | ✅ | The URL or local path to the repository to be scanned. |
+
+### `POST /validate`
+
+Validates the content of an AGENTS.md file string. If using 'beacon-ai-cloud' provider, payment might be required.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `content` | `string` | ✅ | The full content of the AGENTS.md file as a string. |
+| `provider` | `string` | ❌ | The AI provider to use for validation (e.g., 'beacon-ai-cloud'). |
+
+---
+
+## Rate Limits
+
+- **Per minute:** 20
+
+Applies to the Beacon API server endpoints.
+
+---
+
+*Generated by [Beacon](https://github.com/DavidNzube101/beacon) — Make any repo agent-ready. Instantly.*

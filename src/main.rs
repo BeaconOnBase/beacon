@@ -5,13 +5,13 @@ mod inferrer;
 mod generator;
 mod validator;
 mod models;
-mod errors;
-mod db;
-mod farcaster;
 mod verifier;
+mod errors;
+mod identity;
+mod mcp;
 
-#[cfg(test)]
 mod tests;
+mod db;
 
 use anyhow::{Result as AnyResult, Context};
 use axum::{
@@ -19,12 +19,16 @@ use axum::{
     http::{HeaderMap, StatusCode},
     response::IntoResponse,
     routing::{get, post},
-    Json, Router,
+    Json,
+};
+use rust_mcp_sdk::{
+    mcp_server::{hyper_server, HyperServerOptions, ToMcpServerHandler},
+    schema::*,
 };
 use clap::{Parser, Subcommand};
 use rand::seq::SliceRandom;
 use serde::{Deserialize, Serialize};
-use std::{sync::Arc, time::SystemTime, net::SocketAddr};
+use std::{sync::Arc, time::SystemTime};
 use std::result::Result as StdResult;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -87,7 +91,6 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Scan a local repo and generate AGENTS.md
     Generate {
         target: String,
         #[arg(short, long, default_value = "AGENTS.md")]
@@ -97,7 +100,6 @@ enum Commands {
         #[arg(long)]
         api_key: Option<String>,
     },
-    /// Validate an existing AGENTS.md file
     Validate {
         file: String,
         #[arg(long)]
@@ -109,26 +111,15 @@ enum Commands {
         #[arg(short, long, default_value = "8080")]
         port: u16,
     },
-    /// Scan a remote GitHub repo and generate AGENTS.md
-    GenerateRemote {
-        /// GitHub URL (e.g., github.com/user/repo)
-        github_url: String,
-        #[arg(short, long, default_value = "AGENTS.md")]
-        output: String,
-        #[arg(long, default_value = "gemini")]
-        provider: String,
+    Register {
+        #[arg(default_value = "./")]
+        repo_path: String,
+        #[arg(long, default_value = "base")]
+        chain: String,
         #[arg(long)]
-        api_key: Option<String>,
+        agency: Option<String>,
     },
-    /// Start the Farcaster bot
-    FarcasterBot {
-        #[arg(long, default_value = "30")]
-        poll_interval: u64,
-        #[arg(long, default_value = "beacon-agents")]
-        channel: String,
-        #[arg(long, default_value = "gemini")]
-        provider: String,
-    },
+    Upgrade,
 }
 
 #[derive(Deserialize)]
@@ -167,7 +158,24 @@ struct ValidateResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     warnings: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    endpoint_results: Option<Vec<models::EndpointCheckResult>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     error: Option<String>,
+}
+
+#[derive(Serialize)]
+struct HealthResponse {
+    status: &'static str,
+    version: &'static str,
+    name: &'static str,
+}
+
+async fn health() -> Json<HealthResponse> {
+    Json(HealthResponse {
+        status: "ok",
+        version: VERSION,
+        name: "beacon",
+    })
 }
 
 async fn handle_generate(
@@ -183,12 +191,13 @@ async fn handle_generate(
         return Ok(status.into_response());
     }
 
-    let is_cloud = req.api_key.is_none();
-    let mut rid_final = None;
-    let provider = req.provider.unwrap_or_else(|| "gemini".to_string());
+    let provider = req.provider.clone().unwrap_or_else(|| "gemini".to_string());
     let mut actual_provider = provider.clone();
+    let mut rid_final = None;
 
-    if is_cloud {
+    let is_cloud_request = req.api_key.is_none();
+
+    if is_cloud_request {
         let txn_hash = headers.get("x-payment-txn-hash").and_then(|h| h.to_str().ok());
         let chain = headers.get("x-payment-chain").and_then(|h| h.to_str().ok());
         let run_id = headers.get("x-payment-run-id").and_then(|h| h.to_str().ok());
@@ -198,33 +207,70 @@ async fn handle_generate(
             if db::payment_already_used(txn).await.unwrap_or(false) {
                 return Err(errors::BeaconError::TransactionAlreadyUsed);
             }
-            let amount = std::env::var("PAYMENT_AMOUNT_USDC").unwrap_or("0.09".to_string()).parse::<f64>().unwrap_or(0.09);
-            let wallet = if ch == "base" { std::env::var("BEACON_WALLET_BASE").unwrap_or_default() } else { std::env::var("BEACON_WALLET_SOLANA").unwrap_or_default() };
-            let verified = verifier::verify_payment(ch, txn, amount, &wallet).await.map_err(|e| errors::BeaconError::InferenceError(e.to_string()))?;
+
+            let amount = std::env::var("PAYMENT_AMOUNT_USDC")
+                .unwrap_or_else(|_| "0.09".to_string())
+                .parse::<f64>()
+                .unwrap_or(0.09);
+            let wallet = if ch == "base" {
+                std::env::var("BEACON_WALLET_BASE").unwrap_or_default()
+            } else {
+                std::env::var("BEACON_WALLET_SOLANA").unwrap_or_default()
+            };
+
+            let verified = verifier::verify_payment(ch, txn, amount, &wallet)
+                .await
+                .map_err(|e| errors::BeaconError::InferenceError(format!("Verification failed: {}", e)))?;
+
             if !verified {
-                return Err(errors::BeaconError::CloudError { status: 402, message: "Payment not verified".into() });
+                return Err(errors::BeaconError::CloudError { 
+                    status: StatusCode::PAYMENT_REQUIRED.as_u16(), 
+                    message: "Payment not verified".to_string() 
+                });
             }
+
             db::mark_run_paid(rid, txn, ch).await.ok();
             db::record_payment(rid, txn, ch, None).await.ok();
             actual_provider = "gemini".to_string();
         } else {
-            let rid = db::create_run(&req.repo_context.name).await.map_err(|e| errors::BeaconError::DatabaseError(e.to_string()))?;
+            let rid = db::create_run(&req.repo_context.name)
+                .await
+                .map_err(|e| errors::BeaconError::DatabaseError(e.to_string()))?;
+
+            let amount = std::env::var("PAYMENT_AMOUNT_USDC").unwrap_or_else(|_| "0.09".to_string());
+            let w_base = std::env::var("BEACON_WALLET_BASE").unwrap_or_default();
+            let w_sol = std::env::var("BEACON_WALLET_SOLANA").unwrap_or_default();
+
             return Err(errors::BeaconError::PaymentRequired {
                 run_id: rid,
-                amount: "0.09".into(),
-                base_addr: std::env::var("BEACON_WALLET_BASE").unwrap_or_default(),
-                sol_addr: std::env::var("BEACON_WALLET_SOLANA").unwrap_or_default(),
+                amount,
+                base_addr: w_base,
+                sol_addr: w_sol,
             });
         }
     }
 
-    let manifest = inferrer::infer_capabilities(&req.repo_context, &actual_provider, req.api_key.as_deref()).await.map_err(|e| errors::BeaconError::InferenceError(e.to_string()))?;
-    let tmp_path = format!("/tmp/beacon_v2_{}.md", &req.repo_context.name);
-    generator::generate_agents_md(&manifest, &tmp_path).map_err(|e| errors::BeaconError::Unknown(e.to_string()))?;
-    let content = std::fs::read_to_string(&tmp_path).map_err(|e| errors::BeaconError::IoError(e))?;
+    let manifest = inferrer::infer_capabilities(&req.repo_context, &actual_provider, req.api_key.as_deref())
+        .await
+        .map_err(|e| {
+            tracing::error!("Inference failed: {}", e);
+            errors::BeaconError::InferenceError(e.to_string())
+        })?;
+
+    let tmp_path = format!("/tmp/beacon_{}.md", &req.repo_context.name);
+    generator::generate_agents_md(&manifest, &tmp_path)
+        .map_err(|e| {
+            tracing::error!("File generation failed: {}", e);
+            errors::BeaconError::Unknown(format!("File generation failed: {}", e))
+        })?;
+    let content = std::fs::read_to_string(&tmp_path)
+        .map_err(|e| {
+            tracing::error!("Read generated file failed: {}", e);
+            errors::BeaconError::IoError(e)
+        })?;
     let _ = std::fs::remove_file(&tmp_path);
 
-    if is_cloud {
+    if is_cloud_request {
         if let Some(rid) = rid_final {
             db::mark_run_complete(&rid, &content).await.ok();
         }
@@ -251,9 +297,9 @@ async fn handle_validate(
         return Ok(status.into_response());
     }
 
-    let is_cloud = req.api_key.is_none();
+    let is_cloud_request = req.api_key.is_none();
 
-    if is_cloud {
+    if is_cloud_request {
         let txn_hash = headers.get("x-payment-txn-hash").and_then(|h| h.to_str().ok());
         let chain = headers.get("x-payment-chain").and_then(|h| h.to_str().ok());
         let run_id = headers.get("x-payment-run-id").and_then(|h| h.to_str().ok());
@@ -262,38 +308,62 @@ async fn handle_validate(
             if db::payment_already_used(txn).await.unwrap_or(false) {
                 return Err(errors::BeaconError::TransactionAlreadyUsed);
             }
-            let amount = std::env::var("PAYMENT_AMOUNT_USDC").unwrap_or("0.09".to_string()).parse::<f64>().unwrap_or(0.09);
-            let wallet = if ch == "base" { std::env::var("BEACON_WALLET_BASE").unwrap_or_default() } else { std::env::var("BEACON_WALLET_SOLANA").unwrap_or_default() };
-            let verified = verifier::verify_payment(ch, txn, amount, &wallet).await.map_err(|e| errors::BeaconError::ValidationError(e.to_string()))?;
+
+            let amount = std::env::var("PAYMENT_AMOUNT_USDC")
+                .unwrap_or_else(|_| "0.09".to_string())
+                .parse::<f64>()
+                .unwrap_or(0.09);
+            let wallet = if ch == "base" {
+                std::env::var("BEACON_WALLET_BASE").unwrap_or_default()
+            } else {
+                std::env::var("BEACON_WALLET_SOLANA").unwrap_or_default()
+            };
+
+            let verified = verifier::verify_payment(ch, txn, amount, &wallet)
+                .await
+                .map_err(|e| errors::BeaconError::ValidationError(format!("Verification failed: {}", e)))?;
+
             if !verified {
-                return Err(errors::BeaconError::CloudError { status: 402, message: "Payment not verified".into() });
+                return Err(errors::BeaconError::CloudError { 
+                    status: StatusCode::PAYMENT_REQUIRED.as_u16(), 
+                    message: "Payment not verified".to_string() 
+                });
             }
+
             db::mark_run_paid(rid, txn, ch).await.ok();
             db::record_payment(rid, txn, ch, None).await.ok();
         } else {
-            let rid = db::create_run("validate-only").await.map_err(|e| errors::BeaconError::DatabaseError(e.to_string()))?;
+            let rid = db::create_run("validate-only")
+                .await
+                .map_err(|e| errors::BeaconError::DatabaseError(e.to_string()))?;
+
+            let amount = std::env::var("PAYMENT_AMOUNT_USDC").unwrap_or_else(|_| "0.09".to_string());
+            let w_base = std::env::var("BEACON_WALLET_BASE").unwrap_or_default();
+            let w_sol = std::env::var("BEACON_WALLET_SOLANA").unwrap_or_default();
+
             return Err(errors::BeaconError::PaymentRequired {
                 run_id: rid,
-                amount: "0.09".into(),
-                base_addr: std::env::var("BEACON_WALLET_BASE").unwrap_or_default(),
-                sol_addr: std::env::var("BEACON_WALLET_SOLANA").unwrap_or_default(),
+                amount,
+                base_addr: w_base,
+                sol_addr: w_sol,
             });
         }
     }
 
-    let result = validator::validate_content(&req.content).map_err(|e| errors::BeaconError::ValidationError(e.to_string()))?;
+    let result = validator::validate_content(&req.content)
+        .map_err(|e| {
+            tracing::error!("Validation failed: {}", e);
+            errors::BeaconError::ValidationError(e.to_string())
+        })?;
 
     Ok(Json(ValidateResponse {
         success: true,
         valid: Some(result.valid),
         errors: Some(result.errors),
         warnings: Some(result.warnings),
+        endpoint_results: Some(result.endpoint_results),
         error: None,
     }).into_response())
-}
-
-async fn health() -> impl IntoResponse {
-    Json(serde_json::json!({ "status": "ok", "version": VERSION }))
 }
 
 #[tokio::main]
@@ -304,13 +374,21 @@ async fn main() -> AnyResult<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::Generate { target, output, provider, api_key } => {
+        Commands::Generate {
+            target,
+            output,
+            provider,
+            api_key,
+        } => {
             println!("{} Beacon — scanning {}...", random_emoji(), target);
             let ctx = scanner::scan_local(&target)?;
             println!("📦 Repo: {} ({} source files)", ctx.name, ctx.source_files.len());
             let manifest = inferrer::infer_capabilities(&ctx, &provider, api_key.as_deref()).await?;
             generator::generate_agents_md(&manifest, &output)?;
             println!("\n✅ Done! AGENTS.md written to: {}", output);
+            println!("   Provider:     {}", provider);
+            println!("   Capabilities: {}", manifest.capabilities.len());
+            println!("   Endpoints:    {}", manifest.endpoints.len());
         }
         Commands::Validate {
             file,
@@ -335,12 +413,10 @@ async fn main() -> AnyResult<()> {
                 println!("   🌐 Checking endpoint reachability...");
                 result.endpoint_results = validator::check_endpoints(&content).await?;
             }
-
             println!("\n📋 Validation Report");
             println!("   Valid:    {}", if result.valid { "✅ Yes" } else { "❌ No" });
             println!("   Errors:   {}", result.errors.len());
             println!("   Warnings: {}", result.warnings.len());
-
             if !result.errors.is_empty() {
                 println!("\n❌ Errors:");
                 for e in &result.errors {
@@ -367,130 +443,72 @@ async fn main() -> AnyResult<()> {
             }
         }
         Commands::Serve { port } => {
-            println!("{} Beacon — starting server on port {}...", random_emoji(), port);
-            
-            // Initialize Database (Postgres)
-            let pool = db::init_pool().await?;
-            db::run_migrations(&pool).await?;
-
-            // Initialize Redis (Cloud API State)
             let redis_url = std::env::var("REDIS_URL").context("REDIS_URL must be set")?;
-            let redis_client = Arc::new(redis::Client::open(redis_url)?);
-            let cloud_state = AppState {
-                redis_client,
+            let state = AppState {
+                redis_client: Arc::new(redis::Client::open(redis_url)?),
+            };
+            
+            let server_info = InitializeResult {
+                server_info: Implementation {
+                    name: "beacon-mcp".into(),
+                    version: VERSION.into(),
+                    title: Some("Beacon MCP Server".into()),
+                    description: Some("Make any repo agent-ready. Instantly.".into()),
+                    icons: vec![],
+                    website_url: Some("https://beacon.davidnzube.xyz".into()),
+                },
+                capabilities: ServerCapabilities {
+                    tools: Some(ServerCapabilitiesTools { list_changed: Some(false) }),
+                    ..Default::default()
+                },
+                instructions: None,
+                meta: None,
+                protocol_version: "2025-11-25".into(),
             };
 
-            // Setup Main Router (Farcaster API)
-            let farcaster_state = farcaster::api::AppState { pool: pool.clone() };
-            let app = farcaster::api::router(farcaster_state);
+            let mcp_handler = mcp::BeaconMcpHandler::default();
 
-            // Merge with Cloud API routes
-            let app = app
-                .route("/generate", post(handle_generate).with_state(cloud_state.clone()))
-                .route("/validate", post(handle_validate).with_state(cloud_state));
+            let server = hyper_server::create_server(
+                server_info,
+                mcp_handler.to_mcp_server_handler(),
+                HyperServerOptions {
+                    host: "0.0.0.0".to_string(),
+                    port,
+                    sse_support: true,
+                    ..Default::default()
+                },
+            );
 
-            // Add CORS layer
-            use tower_http::cors::{CorsLayer, Any};
-            let cors = CorsLayer::new()
-                .allow_origin(Any)
-                .allow_methods(Any)
-                .allow_headers(Any);
+            let server = server
+                .with_route("/health", get(health))
+                .with_route("/validate", post(handle_validate).with_state(state.clone()))
+                .with_route("/generate", post(handle_generate).with_state(state));
 
-            let app = app.layer(cors);
+            println!("{} Beacon API & MCP Server", random_emoji());
+            println!("   http://0.0.0.0:{}", port);
+            println!("   POST /generate  — generate AGENTS.md from a repo path");
+            println!("   POST /validate  — validate an AGENTS.md file");
+            println!("   GET  /sse       — MCP Server (SSE)");
+            println!("   GET  /health    — health check");
 
-            // Serve miniapp static files if the dist directory exists
-            let app = if std::path::Path::new("miniapp/dist").exists() {
-                use tower_http::services::ServeDir;
-                app.fallback_service(ServeDir::new("miniapp/dist"))
-            } else {
-                app
-            };
-
-            // Optionally spawn Farcaster Bot if NEYNAR_API_KEY is present
-            if std::env::var("NEYNAR_API_KEY").is_ok() {
-                println!("{} Spawning Farcaster Bot...", random_emoji());
-                let neynar = Arc::new(farcaster::neynar::NeynarClient::from_env()?);
-                let channel = std::env::var("FARCASTER_CHANNEL").unwrap_or_else(|_| "beacon-agents".into());
-                let config = farcaster::bot::BotConfig::new(channel.clone(), 30, "gemini".into());
-                let pool_clone = pool.clone();
-                let neynar_bot = neynar.clone();
-                
-                tokio::spawn(async move {
-                    if let Err(e) = farcaster::bot::run_bot(neynar_bot, config, pool_clone).await {
-                        tracing::error!("Farcaster bot error: {}", e);
-                    }
-                });
-
-                // Spawn event listener if agency address is configured
-                if let Ok(addr) = std::env::var("BEACON_AGENCY_ADDRESS") {
-                    let neynar_events = neynar.clone();
-                    let channel_events = channel.clone();
-                    tokio::spawn(async move {
-                        if let Err(e) = farcaster::bot::run_event_listener(
-                            neynar_events,
-                            channel_events,
-                            addr,
-                        ).await {
-                            tracing::error!("Event listener error: {}", e);
-                        }
-                    });
-                }
-            }
-
-            let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{}", port)).await?;
-            println!("⬛ Beacon server running at http://0.0.0.0:{}", port);
-            axum::serve(listener, app).await?;
+            server.start().await.map_err(|e| anyhow::anyhow!("{e}"))?;
         }
-        Commands::GenerateRemote {
-            github_url,
-            output,
-            provider,
-            api_key,
-        } => {
-            println!("{} Beacon — scanning remote {}...", random_emoji(), github_url);
-            let github_token = std::env::var("GITHUB_TOKEN").ok();
-            let ctx = farcaster::github_scanner::scan_remote(&github_url, github_token.as_deref()).await?;
-            println!("📦 Repo: {} ({} source files)", ctx.name, ctx.source_files.len());
-            let manifest = inferrer::infer_capabilities(&ctx, &provider, api_key.as_deref()).await?;
-            generator::generate_agents_md(&manifest, &output)?;
-            println!("\n✅ Done! AGENTS.md written to: {}", output);
-            println!("   Provider:     {}", provider);
-            println!("   Capabilities: {}", manifest.capabilities.len());
-            println!("   Endpoints:    {}", manifest.endpoints.len());
+        Commands::Register { repo_path, chain, agency } => {
+            println!("{} Registering on-chain agent identity...", random_emoji());
+            let _chain = chain;
+            identity::register_agent_identity(&repo_path, &_chain, agency.as_deref()).await?;
+            println!("\n✅ Done! Agent identity registered.");
         }
-        Commands::FarcasterBot {
-            poll_interval,
-            channel,
-            provider,
-        } => {
-            println!("{} Beacon — starting Farcaster bot...", random_emoji());
-            let pool = db::init_pool().await?;
-            db::run_migrations(&pool).await?;
-
-            let neynar = Arc::new(farcaster::neynar::NeynarClient::from_env()?);
-            let config = farcaster::bot::BotConfig::new(channel.clone(), poll_interval, provider);
-
-            let agency_address = config.agency_address.clone();
-
-            // Spawn event listener if agency address is configured
-            if let Some(addr) = agency_address {
-                let neynar_clone = neynar.clone();
-                let channel_clone = channel.clone();
-                tokio::spawn(async move {
-                    if let Err(e) = farcaster::bot::run_event_listener(
-                        neynar_clone,
-                        channel_clone,
-                        addr,
-                    )
-                    .await
-                    {
-                        tracing::error!("Event listener error: {}", e);
-                    }
-                });
+        Commands::Upgrade => {
+            println!("{} Upgrading Beacon CLI...", random_emoji());
+            let status = std::process::Command::new("sh")
+                .arg("-c")
+                .arg("curl -fsSL https://raw.githubusercontent.com/DavidNzube101/beacon/master/install.sh | sh")
+                .status()?;
+            
+            if !status.success() {
+                anyhow::bail!("Upgrade failed with status: {}", status);
             }
-
-            // Run the bot (blocking)
-            farcaster::bot::run_bot(neynar, config, pool).await?;
         }
     }
     Ok(())

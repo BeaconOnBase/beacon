@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -5,6 +7,7 @@ pub struct AgentsManifest {
     pub name: String,
     pub description: String,
     pub version: Option<String>,
+    pub agent_identity: Option<String>,
     #[serde(default)]
     pub capabilities: Vec<Capability>,
     #[serde(default)]
@@ -103,7 +106,7 @@ pub struct ValidationResult {
     pub endpoint_results: Vec<EndpointCheckResult>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct EndpointCheckResult {
     pub endpoint: String,
     pub reachable: bool,
