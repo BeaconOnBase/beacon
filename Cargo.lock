@@ -381,6 +381,7 @@ dependencies = [
  "async-trait",
  "axum 0.8.8",
  "axum-test",
+ "base64 0.21.7",
  "chrono",
  "clap",
  "dotenvy",
@@ -404,6 +405,7 @@ dependencies = [
  "tower 0.4.13",
  "tracing",
  "tracing-subscriber",
+ "url",
  "uuid 1.21.0",
  "walkdir",
 ]
