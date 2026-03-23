@@ -2,7 +2,7 @@
 
 ![Language](https://img.shields.io/badge/built%20with-Rust-orange?style=flat-square&logo=rust)
 ![Tests](https://img.shields.io/github/actions/workflow/status/BeaconOnBase/beacon/release.yml?label=tests&style=flat-square)
-![Version](https://img.shields.io/badge/version-0.3.4-blue?style=flat-square)
+![Version](https://img.shields.io/badge/version-0.3.5-blue?style=flat-square)
 ![License](https://img.shields.io/badge/license-BUSL--1.1-blue?style=flat-square)
 
 **The Verifiable Agentic Protocol.** Make any repository agent-ready. Instantly.
