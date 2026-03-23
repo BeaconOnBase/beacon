@@ -74,7 +74,10 @@ pub async fn run_autoposter(
 
         match generate_cast(&recent_topics).await {
             Ok(cast_text) => {
-                match neynar.post_cast(&cast_text, None, None).await {
+                let embeds = std::env::var("BEACON_BASE_URL").ok().map(|base| {
+                    vec![format!("{}/miniapp", base)]
+                });
+                match neynar.post_cast_with_embeds(&cast_text, None, None, embeds).await {
                     Ok(hash) => {
                         tracing::info!("Auto-posted cast: {} ({})", &cast_text[..cast_text.len().min(50)], hash);
                         // Track recent topics to avoid repetition (keep last 20)

@@ -161,6 +161,16 @@ impl NeynarClient {
         parent_hash: Option<&str>,
         channel_id: Option<&str>,
     ) -> Result<String> {
+        self.post_cast_with_embeds(text, parent_hash, channel_id, None).await
+    }
+
+    pub async fn post_cast_with_embeds(
+        &self,
+        text: &str,
+        parent_hash: Option<&str>,
+        channel_id: Option<&str>,
+        embeds: Option<Vec<String>>,
+    ) -> Result<String> {
         let mut body = json!({
             "signer_uuid": self.signer_uuid,
             "text": text,
@@ -171,6 +181,11 @@ impl NeynarClient {
         }
         if let Some(channel) = channel_id {
             body["channel_id"] = json!(channel);
+        }
+        if let Some(embed_urls) = embeds {
+            body["embeds"] = json!(
+                embed_urls.iter().map(|u| json!({"url": u})).collect::<Vec<_>>()
+            );
         }
 
         let resp = CLIENT
