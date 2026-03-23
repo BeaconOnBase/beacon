@@ -551,10 +551,27 @@ async fn main() -> AnyResult<()> {
                 .arg("-c")
                 .arg("curl -fsSL https://raw.githubusercontent.com/BeaconOnBase/beacon/master/install.sh | sh")
                 .status()?;
-            
+
             if !status.success() {
                 anyhow::bail!("Upgrade failed with status: {}", status);
             }
+        }
+        Commands::FarcasterBot { poll_interval, channel, provider } => {
+            println!("{} Starting Farcaster Bot...", random_emoji());
+            
+            let neynar = farcaster::neynar::NeynarClient::from_env()
+                .context("Failed to initialize Neynar client")?;
+            
+            let db_pool = db::DbPool::new()
+                .context("Failed to create database pool")?;
+
+            let bot_config = farcaster::bot::BotConfig::new(
+                channel,
+                poll_interval,
+                provider,
+            );
+
+            farcaster::bot::run_bot(Arc::new(neynar), bot_config, db_pool).await?;
         }
     }
     Ok(())
