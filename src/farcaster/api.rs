@@ -66,11 +66,14 @@ async fn list_agents(
 async fn get_agent(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
-) -> Result<Json<AgentManifestRow>, (StatusCode, String)> {
+) -> Result<Json<AgentManifestRow>, StatusCode> {
     let agent = db::get_agent(&state.pool, id)
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
-        .ok_or((StatusCode::NOT_FOUND, "Agent not found".to_string()))?;
+        .map_err(|e| {
+            tracing::error!("Failed to get agent: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?
+        .ok_or(StatusCode::NOT_FOUND)?;
 
     Ok(Json(agent))
 }
