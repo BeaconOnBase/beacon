@@ -123,6 +123,14 @@ enum Commands {
         agency: Option<String>,
     },
     Upgrade,
+    FarcasterBot {
+        #[arg(long, default_value = "30")]
+        poll_interval: u64,
+        #[arg(long, default_value = "beacon-agents")]
+        channel: String,
+        #[arg(long, default_value = "gemini")]
+        provider: String,
+    },
 }
 
 #[derive(Deserialize)]
