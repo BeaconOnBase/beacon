@@ -142,6 +142,79 @@ pub async fn search_registry_advanced(
     Ok(entries)
 }
 
+// ── EAS Attestations ────────────────────────────────────────────────
+
+const ATTESTATIONS_TABLE: &str = "agent_attestations";
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct AgentAttestationRow {
+    pub id: String,
+    pub agent_id: String,
+    pub attestation_uid: String,
+    pub schema_uid: String,
+    pub tx_hash: String,
+    pub attester: String,
+    pub revoked: Option<bool>,
+    pub created_at: Option<String>,
+}
+
+pub async fn insert_attestation(
+    agent_id: &str,
+    attestation_uid: &str,
+    tx_hash: &str,
+    schema_uid: &str,
+    attester: &str,
+) -> Result<()> {
+    let db = client()?;
+
+    db.from(ATTESTATIONS_TABLE)
+        .insert(json!([{
+            "id": uuid::Uuid::new_v4().to_string(),
+            "agent_id": agent_id,
+            "attestation_uid": attestation_uid,
+            "schema_uid": schema_uid,
+            "tx_hash": tx_hash,
+            "attester": attester,
+            "revoked": false,
+        }]).to_string())
+        .execute()
+        .await
+        .context("Failed to insert attestation")?;
+
+    Ok(())
+}
+
+pub async fn get_attestations_for_agent(agent_id: &str) -> Result<Vec<AgentAttestationRow>> {
+    let db = client()?;
+
+    let resp = db.from(ATTESTATIONS_TABLE)
+        .eq("agent_id", agent_id)
+        .select("*")
+        .order("created_at.desc")
+        .execute()
+        .await
+        .context("Failed to get attestations")?;
+
+    let body = resp.text().await?;
+    let rows: Vec<AgentAttestationRow> = serde_json::from_str(&body)?;
+    Ok(rows)
+}
+
+pub async fn get_attestation_by_uid(uid: &str) -> Result<Option<AgentAttestationRow>> {
+    let db = client()?;
+
+    let resp = db.from(ATTESTATIONS_TABLE)
+        .eq("attestation_uid", uid)
+        .select("*")
+        .execute()
+        .await
+        .context("Failed to get attestation")?;
+
+    let body = resp.text().await?;
+    let rows: Vec<AgentAttestationRow> = serde_json::from_str(&body)?;
+    Ok(rows.into_iter().next())
+}
+
 // ── PostgREST / Supabase (Cloud API) ────────────────────────────────
 
 

@@ -12,6 +12,7 @@ mod mcp;
 mod openclaw;
 mod registry;
 mod ipfs;
+mod eas;
 
 mod tests;
 mod db;
@@ -469,6 +470,61 @@ async fn handle_registry_pin(
     Ok(Json(result).into_response())
 }
 
+// ── EAS Attestation Handlers ────────────────────────────────────────
+
+async fn handle_create_attestation(
+    Path(id): Path<String>,
+    Json(req): Json<eas::AttestRequest>,
+) -> StdResult<impl IntoResponse, StatusCode> {
+    let agent = db::get_registry_agent(&id).await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    let client = eas::EasClient::from_env()
+        .map_err(|e| {
+            tracing::error!("EAS client error: {}", e);
+            StatusCode::SERVICE_UNAVAILABLE
+        })?;
+
+    let result = client.create_attestation(&req).await
+        .map_err(|e| {
+            tracing::error!("EAS attestation failed: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+
+    // Store attestation in DB
+    db::insert_attestation(
+        &id,
+        &result.attestation_uid,
+        &result.tx_hash,
+        &result.schema_uid,
+        &agent.owner_address,
+    ).await.ok();
+
+    Ok(Json(result).into_response())
+}
+
+async fn handle_get_attestation(
+    Path(uid): Path<String>,
+) -> StdResult<impl IntoResponse, StatusCode> {
+    let attestation = db::get_attestation_by_uid(&uid).await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    Ok(Json(attestation).into_response())
+}
+
+async fn handle_get_agent_attestations(
+    Path(id): Path<String>,
+) -> StdResult<impl IntoResponse, StatusCode> {
+    let attestations = db::get_attestations_for_agent(&id).await
+        .map_err(|e| {
+            tracing::error!("Failed to get attestations: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+
+    Ok(Json(attestations).into_response())
+}
 
 #[tokio::main]
 async fn main() -> AnyResult<()> {
@@ -593,6 +649,10 @@ async fn main() -> AnyResult<()> {
                 .with_route("/api/basenames/resolve/{name}", get(handle_basename_resolve))
                 // IPFS pinning
                 .with_route("/api/registry/{id}/pin", post(handle_registry_pin))
+                // EAS attestations
+                .with_route("/api/registry/{id}/attest", post(handle_create_attestation))
+                .with_route("/api/registry/{id}/attestations", get(handle_get_agent_attestations))
+                .with_route("/api/attestations/{uid}", get(handle_get_attestation))
                 // Mini App & OG embeds
                 .with_route("/miniapp", get(farcaster::miniapp::handle_miniapp_home))
                 .with_route("/miniapp/agent/{id}", get(farcaster::miniapp::handle_miniapp_agent))
@@ -608,6 +668,9 @@ async fn main() -> AnyResult<()> {
             println!("   POST /api/registry                  — register an agent");
             println!("   GET  /api/registry/{{id}}              — get agent by ID");
             println!("   POST /api/registry/{{id}}/pin         — pin manifest to IPFS");
+            println!("   POST /api/registry/{{id}}/attest      — create EAS attestation");
+            println!("   GET  /api/registry/{{id}}/attestations — get agent attestations");
+            println!("   GET  /api/attestations/{{uid}}         — get attestation by UID");
             println!("   GET  /api/basenames/{{name}}           — resolve basename");
             println!("   GET  /sse                           — MCP Server (SSE)");
             println!("   GET  /miniapp                       — Farcaster Mini App");
