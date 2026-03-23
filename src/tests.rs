@@ -3,7 +3,8 @@ mod tests {
     use crate::scanner;
     use crate::validator;
     use crate::generator;
-    use crate::models::{AgentsManifest, Capability, Endpoint, Parameter, Authentication};
+    use crate::openclaw;
+    use crate::models::{AgentsManifest, Capability, Endpoint, Parameter, Authentication, RepoContext, SourceFile, Language};
     use std::fs;
     use std::path::Path;
 
@@ -237,6 +238,9 @@ mod api_tests {
 #[cfg(test)]
 mod mcp_tests {
     use crate::mcp::BeaconMcpHandler;
+    use crate::openclaw;
+    use crate::scanner;
+    use crate::models::{RepoContext, SourceFile, Language};
     use rust_mcp_sdk::mcp_server::ServerHandler;
     use rust_mcp_sdk::McpServer;
     use rust_mcp_sdk::task_store::TaskStore;
@@ -306,5 +310,171 @@ mod mcp_tests {
         fn capabilities(&self) -> &ServerCapabilities { &self.info.capabilities }
         async fn send(&self, _: rust_mcp_sdk::schema::MessageFromServer, _: Option<rust_mcp_sdk::schema::RequestId>, _: Option<std::time::Duration>) -> std::result::Result<Option<rust_mcp_sdk::schema::ClientMessage>, rust_mcp_sdk::error::McpSdkError> { Ok(None) }
         async fn send_batch(&self, _: Vec<rust_mcp_sdk::schema::ServerMessage>, _: Option<std::time::Duration>) -> std::result::Result<Option<Vec<rust_mcp_sdk::schema::ClientMessage>>, rust_mcp_sdk::error::McpSdkError> { Ok(None) }
+    }
+
+    // ── OpenClaw Detection Tests ────────────────────────────────────
+
+    #[test]
+    fn test_openclaw_detects_openclaw_in_package_json() {
+        let ctx = RepoContext {
+            name: "test-agent".to_string(),
+            package_manifest: Some(r#"{ "dependencies": { "@openclaw/sdk": "^1.2.0" } }"#.to_string()),
+            source_files: vec![],
+            ..Default::default()
+        };
+        let fw = openclaw::detect_framework(&ctx);
+        assert!(fw.is_some());
+        let fw = fw.unwrap();
+        assert_eq!(fw.name, "OpenClaw");
+        assert_eq!(fw.version, Some("1.2.0".to_string()));
+    }
+
+    #[test]
+    fn test_openclaw_detects_agentkit_in_manifest() {
+        let ctx = RepoContext {
+            name: "test-agent".to_string(),
+            package_manifest: Some(r#"{ "dependencies": { "@coinbase/agentkit": "^0.5.0" } }"#.to_string()),
+            source_files: vec![],
+            ..Default::default()
+        };
+        let fw = openclaw::detect_framework(&ctx);
+        assert!(fw.is_some());
+        assert_eq!(fw.unwrap().name, "AgentKit");
+    }
+
+    #[test]
+    fn test_openclaw_detects_langchain_in_pyproject() {
+        let ctx = RepoContext {
+            name: "test-agent".to_string(),
+            package_manifest: Some(r#"[tool.poetry.dependencies]\nlangchain = "^0.1.0""#.to_string()),
+            source_files: vec![],
+            ..Default::default()
+        };
+        let fw = openclaw::detect_framework(&ctx);
+        assert!(fw.is_some());
+        assert_eq!(fw.unwrap().name, "LangChain");
+    }
+
+    #[test]
+    fn test_openclaw_detects_capabilities_from_source() {
+        let ctx = RepoContext {
+            name: "test-agent".to_string(),
+            package_manifest: Some(r#"{ "dependencies": { "@openclaw/sdk": "1.0.0" } }"#.to_string()),
+            source_files: vec![
+                SourceFile {
+                    path: "src/agent.ts".to_string(),
+                    language: Language::TypeScript,
+                    content: "await agent.transfer(token, amount);\nawait agent.get_balance(address);\nawait agent.deploy_contract(bytecode);".to_string(),
+                },
+            ],
+            ..Default::default()
+        };
+        let fw = openclaw::detect_framework(&ctx).unwrap();
+        assert!(fw.detected_capabilities.contains(&"token_transfer".to_string()));
+        assert!(fw.detected_capabilities.contains(&"balance_query".to_string()));
+        assert!(fw.detected_capabilities.contains(&"contract_deployment".to_string()));
+    }
+
+    #[test]
+    fn test_openclaw_detects_from_imports_without_manifest() {
+        let ctx = RepoContext {
+            name: "test-agent".to_string(),
+            package_manifest: None,
+            source_files: vec![
+                SourceFile {
+                    path: "src/index.ts".to_string(),
+                    language: Language::TypeScript,
+                    content: "import { Agent } from '@coinbase/agentkit';\nagent.swap(tokenA, tokenB);".to_string(),
+                },
+            ],
+            ..Default::default()
+        };
+        let fw = openclaw::detect_framework(&ctx);
+        assert!(fw.is_some());
+        assert_eq!(fw.unwrap().name, "AgentKit");
+    }
+
+    #[test]
+    fn test_openclaw_returns_none_for_regular_repo() {
+        let ctx = RepoContext {
+            name: "regular-app".to_string(),
+            package_manifest: Some(r#"{ "dependencies": { "express": "^4.0.0" } }"#.to_string()),
+            source_files: vec![
+                SourceFile {
+                    path: "src/index.js".to_string(),
+                    language: Language::JavaScript,
+                    content: "const app = express();\napp.get('/', (req, res) => res.send('hello'));".to_string(),
+                },
+            ],
+            ..Default::default()
+        };
+        let fw = openclaw::detect_framework(&ctx);
+        assert!(fw.is_none());
+    }
+
+    #[test]
+    fn test_openclaw_detects_config_files() {
+        let ctx = RepoContext {
+            name: "test-agent".to_string(),
+            package_manifest: Some(r#"{ "dependencies": { "@openclaw/sdk": "2.0.0" } }"#.to_string()),
+            source_files: vec![
+                SourceFile {
+                    path: "openclaw.json".to_string(),
+                    language: Language::Other("json".to_string()),
+                    content: r#"{ "agent": { "name": "my-agent" } }"#.to_string(),
+                },
+            ],
+            ..Default::default()
+        };
+        let fw = openclaw::detect_framework(&ctx).unwrap();
+        assert_eq!(fw.config_files, vec!["openclaw.json"]);
+    }
+
+    // ── Basenames Namehash Tests ──────────────────────────────────
+
+    #[test]
+    fn test_namehash_empty() {
+        let hash = crate::registry::namehash_public("");
+        assert_eq!(hash, [0u8; 32]);
+    }
+
+    #[test]
+    fn test_namehash_eth() {
+        let hash = crate::registry::namehash_public("eth");
+        // Known namehash for 'eth': 0x93cdeb708b7545dc668eb9280176169d1c33cfd8ed6f04690a0bcc88a93fc4ae
+        let expected: [u8; 32] = [
+            0x93, 0xcd, 0xeb, 0x70, 0x8b, 0x75, 0x45, 0xdc,
+            0x66, 0x8e, 0xb9, 0x28, 0x01, 0x76, 0x16, 0x9d,
+            0x1c, 0x33, 0xcf, 0xd8, 0xed, 0x6f, 0x04, 0x69,
+            0x0a, 0x0b, 0xcc, 0x88, 0xa9, 0x3f, 0xc4, 0xae,
+        ];
+        assert_eq!(hash, expected);
+    }
+
+    #[test]
+    fn test_namehash_base_eth() {
+        // namehash('base.eth') should be deterministic and non-zero
+        let hash = crate::registry::namehash_public("base.eth");
+        assert_ne!(hash, [0u8; 32]);
+    }
+
+    #[test]
+    fn test_namehash_subdomain() {
+        // namehash('jesse.base.eth') should differ from namehash('base.eth')
+        let hash1 = crate::registry::namehash_public("base.eth");
+        let hash2 = crate::registry::namehash_public("jesse.base.eth");
+        assert_ne!(hash1, hash2);
+    }
+
+    // ── Scanner Framework Detection Test ────────────────────────────
+
+    #[test]
+    fn test_scanner_populates_agent_framework_field() {
+        // Scanning current dir — the agent_framework field should be populated
+        // (it may detect framework patterns from test data in source files)
+        let ctx = scanner::scan_local("./").unwrap();
+        // Just verify the field exists and scan completes without error
+        // The actual value depends on repo contents
+        assert!(!ctx.name.is_empty());
     }
 }

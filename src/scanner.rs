@@ -109,6 +109,13 @@ pub fn scan_local(repo_path: &str) -> Result<RepoContext> {
         ctx.source_files.len()
     );
 
+    // Detect agent frameworks
+    ctx.agent_framework = crate::openclaw::detect_framework(&ctx);
+    if let Some(ref fw) = ctx.agent_framework {
+        println!("   ✓ Agent framework detected: {} ({} capabilities)",
+            fw.name, fw.detected_capabilities.len());
+    }
+
     Ok(ctx)
 }
 
