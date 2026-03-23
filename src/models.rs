@@ -65,6 +65,15 @@ pub struct RepoContext {
     pub openapi_spec: Option<String>,
     pub package_manifest: Option<String>,
     pub existing_agents_md: Option<String>,
+    pub agent_framework: Option<AgentFramework>,
+}
+
+#[derive(Debug, Default, Serialize, Deserialize)]
+pub struct AgentFramework {
+    pub name: String,
+    pub version: Option<String>,
+    pub config_files: Vec<String>,
+    pub detected_capabilities: Vec<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

@@ -364,6 +364,20 @@ fn build_prompt(ctx: &RepoContext) -> String {
         }
     }
 
+    if let Some(fw) = &ctx.agent_framework {
+        parts.push(format!("\n## Detected Agent Framework: {}", fw.name));
+        if let Some(ver) = &fw.version {
+            parts.push(format!("Version: {}", ver));
+        }
+        if !fw.config_files.is_empty() {
+            parts.push(format!("Config files: {}", fw.config_files.join(", ")));
+        }
+        if !fw.detected_capabilities.is_empty() {
+            parts.push(format!("Detected capabilities: {}", fw.detected_capabilities.join(", ")));
+        }
+        parts.push("IMPORTANT: This repo contains an AI agent framework. Include agent-specific capabilities like wallet management, transaction signing, and autonomous actions in your analysis.".into());
+    }
+
     parts.push("\n--- END CONTEXT ---".into());
     parts.push("Return the JSON object:".into());
     parts.join("\n")
