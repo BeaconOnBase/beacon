@@ -189,7 +189,12 @@ async fn handle_scan(
         manifest.endpoints.len(),
     );
 
-    let reply_hash = match neynar.post_cast(&summary, Some(&cast.hash), Some(channel_id)).await {
+    // Build embed URL for rich OG card if BEACON_BASE_URL is set
+    let embeds = std::env::var("BEACON_BASE_URL").ok().map(|base| {
+        vec![format!("{}/miniapp", base)]
+    });
+
+    let reply_hash = match neynar.post_cast_with_embeds(&summary, Some(&cast.hash), Some(channel_id), embeds).await {
         Ok(h) => h,
         Err(e) => {
             tracing::error!("Failed to post reply: {}", e);

@@ -592,7 +592,13 @@ async fn main() -> AnyResult<()> {
                 .with_route("/api/registry/{id}", get(handle_registry_get))
                 .with_route("/api/basenames/resolve/{name}", get(handle_basename_resolve))
                 // IPFS pinning
-                .with_route("/api/registry/{id}/pin", post(handle_registry_pin));
+                .with_route("/api/registry/{id}/pin", post(handle_registry_pin))
+                // Mini App & OG embeds
+                .with_route("/miniapp", get(farcaster::miniapp::handle_miniapp_home))
+                .with_route("/miniapp/agent/{id}", get(farcaster::miniapp::handle_miniapp_agent))
+                .with_route("/og/agent/{id}", get(farcaster::og::handle_og_image))
+                .with_route("/og/default.png", get(farcaster::og::handle_og_default))
+                .with_route("/.well-known/farcaster.json", get(farcaster::miniapp::handle_farcaster_manifest));
 
             println!("{} Beacon API & MCP Server", random_emoji());
             println!("   http://0.0.0.0:{}", port);
@@ -604,6 +610,10 @@ async fn main() -> AnyResult<()> {
             println!("   POST /api/registry/{{id}}/pin         — pin manifest to IPFS");
             println!("   GET  /api/basenames/{{name}}           — resolve basename");
             println!("   GET  /sse                           — MCP Server (SSE)");
+            println!("   GET  /miniapp                       — Farcaster Mini App");
+            println!("   GET  /miniapp/agent/{{id}}             — Agent detail page");
+            println!("   GET  /og/agent/{{id}}                  — Agent OG image");
+            println!("   GET  /.well-known/farcaster.json    — Farcaster manifest");
             println!("   GET  /health                        — health check");
 
             // Start farcaster bot in background if configured

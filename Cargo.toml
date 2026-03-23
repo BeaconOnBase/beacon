@@ -38,6 +38,7 @@ rust-mcp-sdk = { version = "0.8.3", features = ["server", "hyper-server", "macro
 async-trait = "0.1"
 base64 = "0.21"
 url = "2"
+resvg = "0.44"
 
 [dev-dependencies]
 axum-test = "15"
