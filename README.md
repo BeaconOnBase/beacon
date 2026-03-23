@@ -1,7 +1,7 @@
 # Beacon
 
 ![Language](https://img.shields.io/badge/built%20with-Rust-orange?style=flat-square&logo=rust)
-![Tests](https://img.shields.io/github/actions/workflow/status/DavidNzube101/beacon/release.yml?label=tests&style=flat-square)
+![Tests](https://img.shields.io/github/actions/workflow/status/BeaconOnBase/beacon/release.yml?label=tests&style=flat-square)
 ![Version](https://img.shields.io/badge/version-0.2.5-blue?style=flat-square)
 ![License](https://img.shields.io/badge/license-BUSL--1.1-blue?style=flat-square)
 
@@ -23,7 +23,7 @@ Beacon is a protocol designed for the Web 4.0 agentic economy. It scans your cod
 ## Install
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/DavidNzube101/beacon/master/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/BeaconOnBase/beacon/master/install.sh | sh
 ```
 
 ---

@@ -1,7 +1,7 @@
 #!/usr/bin/env sh
 set -e
 
-REPO="DavidNzube101/beacon"
+REPO="BeaconOnBase/beacon"
 INSTALL_DIR="/usr/local/bin"
 
 # Get binary name from first argument (default: beacon)
@@ -79,7 +79,7 @@ if [ -e "$INSTALL_DIR/$BINARY" ]; then
     else
         echo "Error: A file named '$BINARY' already exists in $INSTALL_DIR and does not appear to be Beacon."
         echo "To install Beacon with a different name, pass it as an argument:"
-        echo "  curl -fsSL https://raw.githubusercontent.com/DavidNzube101/beacon/master/install.sh | sh -s -- your-custom-name"
+        echo "  curl -fsSL https://raw.githubusercontent.com/BeaconOnBase/beacon/master/install.sh | sh -s -- your-custom-name"
         echo ""
         echo "Example: curl ... | sh -s -- beacon-ai $VERSION"
         exit 1

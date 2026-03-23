@@ -503,7 +503,7 @@ async fn main() -> AnyResult<()> {
             println!("{} Upgrading Beacon CLI...", random_emoji());
             let status = std::process::Command::new("sh")
                 .arg("-c")
-                .arg("curl -fsSL https://raw.githubusercontent.com/DavidNzube101/beacon/master/install.sh | sh")
+                .arg("curl -fsSL https://raw.githubusercontent.com/BeaconOnBase/beacon/master/install.sh | sh")
                 .status()?;
             
             if !status.success() {
