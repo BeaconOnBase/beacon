@@ -38,6 +38,7 @@ const VERSION: &str = env!("CARGO_PKG_VERSION");
 #[derive(Clone)]
 struct AppState {
     redis_client: Arc<redis::Client>,
+    db_pool: Arc<db::DbPool>,
 }
 
 const RATE_LIMIT_WINDOW_SECONDS: u64 = 60;
