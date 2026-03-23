@@ -36,7 +36,8 @@ pub struct CastAuthor {
 
 #[derive(Debug, Deserialize)]
 struct MentionsResponse {
-    result: MentionsResult,
+    result: Option<MentionsResult>,
+    notifications: Option<Vec<Notification>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -48,6 +49,32 @@ struct MentionsResult {
 #[derive(Debug, Deserialize)]
 struct Notification {
     cast: Option<Cast>,
+    target: Option<NotificationTarget>,
+}
+
+#[derive(Debug, Deserialize)]
+struct NotificationTarget {
+    hash: Option<String>,
+}
+
+impl Notification {
+    fn get_cast(&self) -> Option<Cast> {
+        if let Some(ref cast) = self.cast {
+            return Some(cast.clone());
+        }
+        if let Some(ref target) = self.target {
+            if let Some(ref hash) = target.hash {
+                return Some(Cast {
+                    hash: hash.clone(),
+                    author: CastAuthor { fid: 0, username: None },
+                    text: String::new(),
+                    timestamp: String::new(),
+                    parent_hash: None,
+                });
+            }
+        }
+        None
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -104,18 +131,27 @@ impl NeynarClient {
             .context("Failed to fetch mentions from Neynar")?;
 
         if !resp.status().is_success() {
-            anyhow::bail!("Neynar API returned {} for mentions", resp.status());
+            let status = resp.status();
+            let err = resp.text().await.unwrap_or_default();
+            anyhow::bail!("Neynar API returned {}: {}", status, err);
         }
 
         let data: MentionsResponse = resp.json().await?;
-        let casts: Vec<Cast> = data
+        
+        let notifications = data
             .result
-            .notifications
-            .into_iter()
-            .filter_map(|n| n.cast)
+            .as_ref()
+            .map(|r| &r.notifications)
+            .or(data.notifications.as_ref())
+            .map(|n| n.as_slice())
+            .unwrap_or(&[]);
+
+        let casts: Vec<Cast> = notifications
+            .iter()
+            .filter_map(|n| n.get_cast())
             .collect();
 
-        let next_cursor = data.result.next.and_then(|n| n.cursor);
+        let next_cursor = data.result.as_ref().and_then(|r| r.next.as_ref().and_then(|n| n.cursor.as_ref())).cloned();
         Ok((casts, next_cursor))
     }
 
