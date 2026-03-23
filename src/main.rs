@@ -455,7 +455,7 @@ async fn main() -> AnyResult<()> {
                     title: Some("Beacon MCP Server".into()),
                     description: Some("Make any repo agent-ready. Instantly.".into()),
                     icons: vec![],
-                    website_url: Some("https://beacon.davidnzube.xyz".into()),
+                    website_url: Some("https://beaconcloud.org".into()),
                 },
                 capabilities: ServerCapabilities {
                     tools: Some(ServerCapabilitiesTools { list_changed: Some(false) }),
