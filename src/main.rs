@@ -492,15 +492,10 @@ async fn main() -> AnyResult<()> {
                 },
             );
 
-            let farcaster_state = farcaster::api::AppState {
-                pool: (*state.db_pool).clone(),
-            };
-
             let server = server
                 .with_route("/health", get(health))
                 .with_route("/validate", post(handle_validate).with_state(state.clone()))
-                .with_route("/generate", post(handle_generate).with_state(state.clone()))
-                .nest("/farcaster", farcaster::api::router(farcaster_state));
+                .with_route("/generate", post(handle_generate).with_state(state));
 
             println!("{} Beacon API & MCP Server", random_emoji());
             println!("   http://0.0.0.0:{}", port);
@@ -508,32 +503,28 @@ async fn main() -> AnyResult<()> {
             println!("   POST /validate  — validate an AGENTS.md file");
             println!("   GET  /sse       — MCP Server (SSE)");
             println!("   GET  /health    — health check");
-            println!("   Farcaster routes: /farcaster/*");
 
             // Start farcaster bot in background if configured
             if std::env::var("NEYNAR_API_KEY").is_ok() {
-                let neynar = match farcaster::neynar::NeynarClient::from_env() {
-                    Ok(n) => Arc::new(n),
+                match farcaster::neynar::NeynarClient::from_env() {
+                    Ok(neynar) => {
+                        let bot_config = farcaster::bot::BotConfig::new(
+                            std::env::var("FARCASTER_CHANNEL").unwrap_or_else(|_| "beacon-agents".to_string()),
+                            30,
+                            "gemini".to_string(),
+                        );
+                        
+                        let bot_pool = db::DbPool::new().expect("Failed to create db pool");
+                        tokio::spawn(async move {
+                            if let Err(e) = farcaster::bot::run_bot(Arc::new(neynar), bot_config, bot_pool).await {
+                                tracing::error!("Farcaster bot error: {}", e);
+                            }
+                        });
+                        println!("   🤖 Farcaster bot starting...");
+                    }
                     Err(e) => {
                         tracing::warn!("Farcaster bot not starting: {}", e);
-                        None
                     }
-                };
-
-                if let Some(neynar_client) = neynar {
-                    let bot_config = farcaster::bot::BotConfig::new(
-                        std::env::var("FARCASTER_CHANNEL").unwrap_or_else(|_| "beacon-agents".to_string()),
-                        30,
-                        "gemini".to_string(),
-                    );
-                    
-                    let bot_pool = (*state.db_pool).clone();
-                    tokio::spawn(async move {
-                        if let Err(e) = farcaster::bot::run_bot(neynar_client, bot_config, bot_pool).await {
-                            tracing::error!("Farcaster bot error: {}", e);
-                        }
-                    });
-                    println!("   🤖 Farcaster bot starting...");
                 }
             }
 
