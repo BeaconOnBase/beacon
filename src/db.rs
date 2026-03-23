@@ -98,6 +98,50 @@ pub async fn get_registry_agent(id: &str) -> Result<Option<AgentRegistryEntry>> 
     Ok(entries.into_iter().next())
 }
 
+pub async fn update_agent_manifest_cid(agent_id: &str, cid: &str) -> Result<()> {
+    let db = client()?;
+
+    db.from(AGENT_REGISTRY_TABLE)
+        .eq("id", agent_id)
+        .update(json!({
+            "manifest_cid": cid
+        }).to_string())
+        .execute()
+        .await
+        .context("Failed to update manifest CID")?;
+
+    Ok(())
+}
+
+pub async fn search_registry_advanced(
+    capability: Option<&str>,
+    framework: Option<&str>,
+    limit: usize,
+    offset: usize,
+) -> Result<Vec<AgentRegistryEntry>> {
+    let db = client()?;
+
+    let mut query = db.from(AGENT_REGISTRY_TABLE)
+        .select("*")
+        .order("registered_at.desc")
+        .range(offset, offset + limit - 1);
+
+    if let Some(fw) = framework {
+        query = query.eq("framework", fw);
+    }
+
+    if let Some(cap) = capability {
+        query = query.ilike("manifest_json", format!("%{}%", cap));
+    }
+
+    let resp = query.execute().await
+        .context("Failed to search registry (advanced)")?;
+
+    let body = resp.text().await?;
+    let entries: Vec<AgentRegistryEntry> = serde_json::from_str(&body)?;
+    Ok(entries)
+}
+
 // ── PostgREST / Supabase (Cloud API) ────────────────────────────────
 
 
