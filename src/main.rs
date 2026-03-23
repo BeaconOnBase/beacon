@@ -11,6 +11,7 @@ mod identity;
 mod mcp;
 mod openclaw;
 mod registry;
+mod ipfs;
 
 mod tests;
 mod db;
@@ -434,6 +435,41 @@ async fn handle_basename_resolve(
     }
 }
 
+// ── IPFS Pinning Handlers ────────────────────────────────────────────
+
+async fn handle_registry_pin(
+    Path(id): Path<String>,
+) -> StdResult<impl IntoResponse, StatusCode> {
+    let agent = db::get_registry_agent(&id).await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    let manifest = agent.manifest_json
+        .ok_or(StatusCode::BAD_REQUEST)?;
+
+    let client = ipfs::IpfsClient::from_env()
+        .map_err(|e| {
+            tracing::error!("IPFS client error: {}", e);
+            StatusCode::SERVICE_UNAVAILABLE
+        })?;
+
+    let result = client.pin_json(&agent.name, &manifest).await
+        .map_err(|e| {
+            tracing::error!("IPFS pin failed: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+
+    // Update the registry entry with the CID
+    db::update_agent_manifest_cid(&id, &result.cid).await
+        .map_err(|e| {
+            tracing::error!("Failed to update CID: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+
+    Ok(Json(result).into_response())
+}
+
+
 #[tokio::main]
 async fn main() -> AnyResult<()> {
     tracing_subscriber::fmt::init();
@@ -554,18 +590,21 @@ async fn main() -> AnyResult<()> {
                 .with_route("/api/registry", get(handle_registry_search))
                 .with_route("/api/registry", post(handle_registry_register))
                 .with_route("/api/registry/{id}", get(handle_registry_get))
-                .with_route("/api/basenames/resolve/{name}", get(handle_basename_resolve));
+                .with_route("/api/basenames/resolve/{name}", get(handle_basename_resolve))
+                // IPFS pinning
+                .with_route("/api/registry/{id}/pin", post(handle_registry_pin));
 
             println!("{} Beacon API & MCP Server", random_emoji());
             println!("   http://0.0.0.0:{}", port);
-            println!("   POST /generate             — generate AGENTS.md from a repo path");
-            println!("   POST /validate             — validate an AGENTS.md file");
-            println!("   GET  /api/registry         — search/browse agent registry");
-            println!("   POST /api/registry         — register an agent");
-            println!("   GET  /api/registry/{{id}}     — get agent by ID");
-            println!("   GET  /api/basenames/{{name}}  — resolve a basename");
-            println!("   GET  /sse                  — MCP Server (SSE)");
-            println!("   GET  /health               — health check");
+            println!("   POST /generate                      — generate AGENTS.md");
+            println!("   POST /validate                      — validate AGENTS.md");
+            println!("   GET  /api/registry                  — search agent registry");
+            println!("   POST /api/registry                  — register an agent");
+            println!("   GET  /api/registry/{{id}}              — get agent by ID");
+            println!("   POST /api/registry/{{id}}/pin         — pin manifest to IPFS");
+            println!("   GET  /api/basenames/{{name}}           — resolve basename");
+            println!("   GET  /sse                           — MCP Server (SSE)");
+            println!("   GET  /health                        — health check");
 
             // Start farcaster bot in background if configured
             if std::env::var("NEYNAR_API_KEY").is_ok() {
