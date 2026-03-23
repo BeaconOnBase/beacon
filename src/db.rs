@@ -305,19 +305,28 @@ pub async fn search_agents(
     limit: i64,
     offset: i64,
 ) -> Result<Vec<AgentManifestRow>> {
-    let mut req = pool.client.from(AGENT_MANIFESTS_TABLE)
-        .select("*")
-        .limit(limit)
-        .offset(offset);
+    let mut url = format!("{}/{}?select=*&limit={}&offset={}", 
+        std::env::var("SUPABASE_URL").context("SUPABASE_URL not set")? + "/rest/v1",
+        AGENT_MANIFESTS_TABLE,
+        limit,
+        offset
+    );
 
     if let Some(q) = query {
-        req = req.or_filter(json!({
-            "name": { "ilike": format!("%{}%", q) }
-        }).to_string());
+        url.push_str(&format!("&name=ilike.%{}%", q));
     }
 
-    let resp = req.execute().await.context("Failed to search agents")?;
-    let body = resp.text().await?;
-    let records: Vec<AgentManifestRow> = serde_json::from_str(&body)?;
+    let key = std::env::var("SUPABASE_SERVICE_KEY")
+        .context("SUPABASE_SERVICE_KEY not set")?;
+
+    let resp = reqwest::Client::new()
+        .get(&url)
+        .header("apikey", &key)
+        .header("Authorization", format!("Bearer {}", key))
+        .send()
+        .await
+        .context("Failed to search agents")?;
+
+    let records: Vec<AgentManifestRow> = resp.json().await.context("Failed to parse response")?;
     Ok(records)
 }
