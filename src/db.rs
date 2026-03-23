@@ -4,6 +4,103 @@ use serde_json::json;
 use uuid::Uuid;
 use crate::models::AgentsManifest;
 
+// ── Agent Registry (Supabase/PostgREST) ─────────────────────────────
+
+const AGENT_REGISTRY_TABLE: &str = "agent_registry";
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct AgentRegistryEntry {
+    pub id: String,
+    pub name: String,
+    pub description: String,
+    pub basename: Option<String>,
+    pub manifest_json: Option<serde_json::Value>,
+    pub manifest_cid: Option<String>,
+    pub owner_address: String,
+    pub wallet_address: Option<String>,
+    pub framework: Option<String>,
+    pub tx_hash: Option<String>,
+    pub registered_at: Option<String>,
+}
+
+pub async fn register_agent(entry: &AgentRegistryEntry) -> Result<()> {
+    let db = client()?;
+
+    db.from(AGENT_REGISTRY_TABLE)
+        .insert(json!([{
+            "id": entry.id,
+            "name": entry.name,
+            "description": entry.description,
+            "basename": entry.basename,
+            "manifest_json": entry.manifest_json,
+            "manifest_cid": entry.manifest_cid,
+            "owner_address": entry.owner_address,
+            "wallet_address": entry.wallet_address,
+            "framework": entry.framework,
+            "tx_hash": entry.tx_hash,
+        }]).to_string())
+        .execute()
+        .await
+        .context("Failed to register agent")?;
+
+    Ok(())
+}
+
+pub async fn search_registry(query: Option<&str>, limit: usize, offset: usize) -> Result<Vec<AgentRegistryEntry>> {
+    let db = client()?;
+
+    let resp = if let Some(q) = query {
+        if q.is_empty() {
+            db.from(AGENT_REGISTRY_TABLE)
+                .select("*")
+                .order("registered_at.desc")
+                .range(offset, offset + limit - 1)
+                .execute()
+                .await
+                .context("Failed to search registry")?
+        } else {
+            db.from(AGENT_REGISTRY_TABLE)
+                .select("*")
+                .or(format!("name.ilike.%{}%,description.ilike.%{}%", q, q))
+                .order("registered_at.desc")
+                .range(offset, offset + limit - 1)
+                .execute()
+                .await
+                .context("Failed to search registry")?
+        }
+    } else {
+        db.from(AGENT_REGISTRY_TABLE)
+            .select("*")
+            .order("registered_at.desc")
+            .range(offset, offset + limit - 1)
+            .execute()
+            .await
+            .context("Failed to search registry")?
+    };
+
+    let body = resp.text().await?;
+    let entries: Vec<AgentRegistryEntry> = serde_json::from_str(&body)?;
+    Ok(entries)
+}
+
+pub async fn get_registry_agent(id: &str) -> Result<Option<AgentRegistryEntry>> {
+    let db = client()?;
+
+    let resp = db.from(AGENT_REGISTRY_TABLE)
+        .eq("id", id)
+        .select("*")
+        .execute()
+        .await
+        .context("Failed to get registry agent")?;
+
+    let body = resp.text().await?;
+    let entries: Vec<AgentRegistryEntry> = serde_json::from_str(&body)?;
+    Ok(entries.into_iter().next())
+}
+
+// ── PostgREST / Supabase (Cloud API) ────────────────────────────────
+
+
 const RUNS_TABLE: &str = "runs";
 const PAYMENTS_TABLE: &str = "payments";
 const AGENT_MANIFESTS_TABLE: &str = "agent_manifests";

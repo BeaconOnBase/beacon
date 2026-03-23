@@ -10,6 +10,7 @@ mod errors;
 mod identity;
 mod mcp;
 mod openclaw;
+mod registry;
 
 mod tests;
 mod db;
@@ -18,7 +19,7 @@ mod farcaster;
 
 use anyhow::{Result as AnyResult, Context};
 use axum::{
-    extract::State,
+    extract::{Path, Query, State},
     http::{HeaderMap, StatusCode},
     response::IntoResponse,
     routing::{get, post},
@@ -377,6 +378,62 @@ async fn handle_validate(
     }).into_response())
 }
 
+// ── Registry API Handlers ────────────────────────────────────────────
+
+async fn handle_registry_search(
+    Query(params): Query<registry::RegistryQuery>,
+) -> StdResult<impl IntoResponse, StatusCode> {
+    let reg = registry::AgentRegistry::new();
+    match reg.search(&params).await {
+        Ok(entries) => Ok(Json(entries).into_response()),
+        Err(e) => {
+            tracing::error!("Registry search failed: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+async fn handle_registry_register(
+    Json(req): Json<registry::RegisterRequest>,
+) -> StdResult<impl IntoResponse, StatusCode> {
+    let reg = registry::AgentRegistry::new();
+    match reg.register(&req).await {
+        Ok(resp) => Ok(Json(resp).into_response()),
+        Err(e) => {
+            tracing::error!("Registry register failed: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+async fn handle_registry_get(
+    Path(id): Path<String>,
+) -> StdResult<impl IntoResponse, StatusCode> {
+    let reg = registry::AgentRegistry::new();
+    match reg.get_agent(&id).await {
+        Ok(Some(entry)) => Ok(Json(entry).into_response()),
+        Ok(None) => Err(StatusCode::NOT_FOUND),
+        Err(e) => {
+            tracing::error!("Registry get failed: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+async fn handle_basename_resolve(
+    Path(name): Path<String>,
+) -> StdResult<impl IntoResponse, StatusCode> {
+    let reg = registry::AgentRegistry::new();
+    match reg.resolve_basename(&name).await {
+        Ok(Some(addr)) => Ok(Json(serde_json::json!({ "name": name, "address": addr })).into_response()),
+        Ok(None) => Err(StatusCode::NOT_FOUND),
+        Err(e) => {
+            tracing::error!("Basename resolve failed: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
 #[tokio::main]
 async fn main() -> AnyResult<()> {
     tracing_subscriber::fmt::init();
@@ -493,14 +550,22 @@ async fn main() -> AnyResult<()> {
             let server = server
                 .with_route("/health", get(health))
                 .with_route("/validate", post(handle_validate).with_state(state.clone()))
-                .with_route("/generate", post(handle_generate).with_state(state));
+                .with_route("/generate", post(handle_generate).with_state(state))
+                .with_route("/api/registry", get(handle_registry_search))
+                .with_route("/api/registry", post(handle_registry_register))
+                .with_route("/api/registry/:id", get(handle_registry_get))
+                .with_route("/api/basenames/resolve/:name", get(handle_basename_resolve));
 
             println!("{} Beacon API & MCP Server", random_emoji());
             println!("   http://0.0.0.0:{}", port);
-            println!("   POST /generate  — generate AGENTS.md from a repo path");
-            println!("   POST /validate  — validate an AGENTS.md file");
-            println!("   GET  /sse       — MCP Server (SSE)");
-            println!("   GET  /health    — health check");
+            println!("   POST /generate             — generate AGENTS.md from a repo path");
+            println!("   POST /validate             — validate an AGENTS.md file");
+            println!("   GET  /api/registry         — search/browse agent registry");
+            println!("   POST /api/registry         — register an agent");
+            println!("   GET  /api/registry/:id     — get agent by ID");
+            println!("   GET  /api/basenames/:name  — resolve a basename");
+            println!("   GET  /sse                  — MCP Server (SSE)");
+            println!("   GET  /health               — health check");
 
             // Start farcaster bot in background if configured
             if std::env::var("NEYNAR_API_KEY").is_ok() {
