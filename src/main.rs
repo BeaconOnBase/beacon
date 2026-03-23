@@ -623,6 +623,29 @@ async fn main() -> AnyResult<()> {
                             }
                         });
                         println!("   🤖 Farcaster bot starting...");
+
+                        // Start auto-poster in background (posts every 30 min)
+                        let autoposter_neynar = Arc::new(
+                            farcaster::neynar::NeynarClient::from_env()
+                                .expect("Neynar client already validated")
+                        );
+                        let autoposter_config = farcaster::autoposter::AutoPosterConfig::new(
+                            std::env::var("AUTOPOSTER_INTERVAL_SECS")
+                                .ok()
+                                .and_then(|v| v.parse().ok())
+                                .unwrap_or(1800), // 30 minutes default
+                        );
+                        tokio::spawn(async move {
+                            if let Err(e) = farcaster::autoposter::run_autoposter(
+                                autoposter_neynar,
+                                autoposter_config,
+                            ).await {
+                                tracing::error!("Auto-poster error: {}", e);
+                            }
+                        });
+                        println!("   📣 Auto-poster starting (every {}s)...",
+                            std::env::var("AUTOPOSTER_INTERVAL_SECS")
+                                .unwrap_or_else(|_| "1800".to_string()));
                     }
                     Err(e) => {
                         tracing::warn!("Farcaster bot not starting: {}", e);
