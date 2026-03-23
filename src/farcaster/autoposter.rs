@@ -156,12 +156,29 @@ Rules:
     }
 
     let raw: Value = response.json().await?;
+
+    // Check that Gemini actually finished generating
+    let finish_reason = raw["candidates"][0]["finishReason"]
+        .as_str()
+        .unwrap_or("UNKNOWN");
+    if finish_reason != "STOP" {
+        anyhow::bail!(
+            "Gemini did not finish generating (reason: {}), skipping cast",
+            finish_reason
+        );
+    }
+
     let text = raw["candidates"][0]["content"]["parts"][0]["text"]
         .as_str()
         .context("Unexpected Gemini response shape")?
         .trim()
         .trim_matches('"')
         .to_string();
+
+    // Reject obviously incomplete text (ends mid-sentence)
+    if text.len() < 20 || (!text.ends_with(|c: char| ".!?…)\"'".contains(c)) && text.len() < 50) {
+        anyhow::bail!("Generated cast looks incomplete: {:?}", text);
+    }
 
     // Safety check: ensure it's within Farcaster's limit
     if text.len() > 1024 {
