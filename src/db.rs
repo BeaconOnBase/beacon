@@ -300,7 +300,7 @@ pub async fn get_agent(pool: &DbPool, id: Uuid) -> Result<Option<AgentManifestRo
 }
 
 pub async fn search_agents(
-    pool: &DbPool,
+    _pool: &DbPool,
     query: Option<&str>,
     limit: i64,
     offset: i64,

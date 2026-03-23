@@ -9,6 +9,7 @@ mod verifier;
 mod errors;
 mod identity;
 mod mcp;
+mod openclaw;
 
 mod tests;
 mod db;
@@ -454,10 +455,8 @@ async fn main() -> AnyResult<()> {
         }
         Commands::Serve { port } => {
             let redis_url = std::env::var("REDIS_URL").context("REDIS_URL must be set")?;
-            let db_pool = db::DbPool::new().context("Failed to create database pool")?;
             let state = AppState {
                 redis_client: Arc::new(redis::Client::open(redis_url)?),
-                db_pool: Arc::new(db_pool),
             };
 
             let server_info = InitializeResult {
