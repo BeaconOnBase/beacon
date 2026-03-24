@@ -585,6 +585,51 @@ async fn handle_a2a_register_endpoint(
     }
 }
 
+// ── Analytics Handlers ──────────────────────────────────────────────
+
+async fn handle_agent_stats(
+    Path(id): Path<String>,
+) -> StdResult<impl IntoResponse, StatusCode> {
+    match analytics::AgentAnalytics::get_stats(&id).await {
+        Ok(stats) => Ok(Json(stats).into_response()),
+        Err(e) => {
+            tracing::error!("Get agent stats failed: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+async fn handle_agent_events(
+    Path(id): Path<String>,
+    Query(params): Query<analytics::AnalyticsQuery>,
+) -> StdResult<impl IntoResponse, StatusCode> {
+    let limit = params.limit.unwrap_or(50).min(100);
+    let offset = params.offset.unwrap_or(0);
+    match analytics::AgentAnalytics::get_events(&id, params.event_type.as_deref(), limit, offset).await {
+        Ok(events) => Ok(Json(events).into_response()),
+        Err(e) => {
+            tracing::error!("Get agent events failed: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+async fn handle_trending_agents(
+    Query(params): Query<std::collections::HashMap<String, String>>,
+) -> StdResult<impl IntoResponse, StatusCode> {
+    let limit = params.get("limit")
+        .and_then(|l| l.parse().ok())
+        .unwrap_or(20usize)
+        .min(100);
+    match analytics::AgentAnalytics::get_trending(limit).await {
+        Ok(trending) => Ok(Json(trending).into_response()),
+        Err(e) => {
+            tracing::error!("Get trending agents failed: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
 // ── Tags & Categories Handlers ──────────────────────────────────────
 
 async fn handle_set_tags(
