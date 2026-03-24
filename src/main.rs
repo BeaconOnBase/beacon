@@ -909,6 +909,10 @@ async fn main() -> AnyResult<()> {
                 .with_route("/api/a2a/messages", post(handle_a2a_send))
                 .with_route("/api/a2a/messages/{agent_id}", get(handle_a2a_inbox))
                 .with_route("/api/a2a/endpoint", post(handle_a2a_register_endpoint))
+                // Health monitoring
+                .with_route("/api/registry/{id}/health", post(handle_health_check_agent))
+                .with_route("/api/registry/{id}/health", get(handle_health_status))
+                .with_route("/api/health", get(handle_health_list))
                 // Analytics
                 .with_route("/api/registry/{id}/stats", get(handle_agent_stats))
                 .with_route("/api/registry/{id}/events", get(handle_agent_events))
@@ -941,6 +945,9 @@ async fn main() -> AnyResult<()> {
             println!("   POST /api/a2a/messages              — send agent-to-agent message");
             println!("   GET  /api/a2a/messages/{{id}}          — get agent inbox");
             println!("   POST /api/a2a/endpoint              — register agent endpoint");
+            println!("   POST /api/registry/{{id}}/health      — ping agent health check");
+            println!("   GET  /api/registry/{{id}}/health      — get agent health status");
+            println!("   GET  /api/health                    — list all health statuses");
             println!("   GET  /api/registry/{{id}}/stats       — get agent analytics");
             println!("   GET  /api/registry/{{id}}/events      — get agent event log");
             println!("   GET  /api/analytics/trending        — trending agents");
