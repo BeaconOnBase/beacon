@@ -300,6 +300,94 @@ pub async fn get_a2a_endpoint(agent_id: &str) -> Result<Option<String>> {
     Ok(rows.first().and_then(|r| r["endpoint_url"].as_str().map(|s| s.to_string())))
 }
 
+// ── Agent Analytics ─────────────────────────────────────────────────
+
+const ANALYTICS_EVENTS_TABLE: &str = "analytics_events";
+const AGENT_STATS_TABLE: &str = "agent_stats";
+
+pub async fn insert_analytics_event(event: &crate::analytics::AnalyticsEvent) -> Result<()> {
+    let db = client()?;
+
+    db.from(ANALYTICS_EVENTS_TABLE)
+        .insert(json!([{
+            "id": event.id,
+            "agent_id": event.agent_id,
+            "event_type": event.event_type,
+            "metadata": event.metadata,
+        }]).to_string())
+        .execute()
+        .await
+        .context("Failed to insert analytics event")?;
+
+    Ok(())
+}
+
+pub async fn get_analytics_events(
+    agent_id: &str,
+    event_type: Option<&str>,
+    limit: usize,
+    offset: usize,
+) -> Result<Vec<crate::analytics::AnalyticsEvent>> {
+    let db = client()?;
+
+    let mut query = db.from(ANALYTICS_EVENTS_TABLE)
+        .eq("agent_id", agent_id)
+        .select("*")
+        .order("created_at.desc")
+        .range(offset, offset + limit - 1);
+
+    if let Some(et) = event_type {
+        query = query.eq("event_type", et);
+    }
+
+    let resp = query.execute().await
+        .context("Failed to get analytics events")?;
+
+    let body = resp.text().await?;
+    let rows: Vec<crate::analytics::AnalyticsEvent> = serde_json::from_str(&body)?;
+    Ok(rows)
+}
+
+pub async fn get_agent_stats(agent_id: &str) -> Result<crate::analytics::AgentStats> {
+    let db = client()?;
+
+    let resp = db.from(AGENT_STATS_TABLE)
+        .eq("agent_id", agent_id)
+        .select("*")
+        .execute()
+        .await
+        .context("Failed to get agent stats")?;
+
+    let body = resp.text().await?;
+    let rows: Vec<crate::analytics::AgentStats> = serde_json::from_str(&body)?;
+
+    Ok(rows.into_iter().next().unwrap_or(crate::analytics::AgentStats {
+        agent_id: agent_id.to_string(),
+        total_discoveries: 0,
+        total_messages_received: 0,
+        total_messages_sent: 0,
+        total_attestations: 0,
+        total_health_checks: 0,
+        last_active: None,
+    }))
+}
+
+pub async fn get_trending_agents(limit: usize) -> Result<Vec<crate::analytics::AgentStats>> {
+    let db = client()?;
+
+    let resp = db.from(AGENT_STATS_TABLE)
+        .select("*")
+        .order("total_discoveries.desc")
+        .range(0, limit - 1)
+        .execute()
+        .await
+        .context("Failed to get trending agents")?;
+
+    let body = resp.text().await?;
+    let rows: Vec<crate::analytics::AgentStats> = serde_json::from_str(&body)?;
+    Ok(rows)
+}
+
 // ── Agent Tags ──────────────────────────────────────────────────────
 
 const AGENT_TAGS_TABLE: &str = "agent_tags";

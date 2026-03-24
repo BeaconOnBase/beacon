@@ -14,6 +14,7 @@ mod registry;
 mod ipfs;
 mod eas;
 mod a2a;
+mod analytics;
 mod tags;
 
 mod tests;
@@ -583,7 +584,6 @@ async fn handle_a2a_register_endpoint(
         }
     }
 }
-
 
 // ── Tags & Categories Handlers ──────────────────────────────────────
 
