@@ -10,7 +10,7 @@ use crate::db;
 /// Serves the Farcaster app manifest at /.well-known/farcaster.json
 pub async fn handle_farcaster_manifest() -> impl IntoResponse {
     let base_url = std::env::var("BEACON_BASE_URL")
-        .unwrap_or_else(|_| "https://api.beaconcloud.org".to_string());
+        .unwrap_or_else(|_| "https://www.beaconcloud.org".to_string());
 
     let manifest_header = std::env::var("FARCASTER_MANIFEST_HEADER").unwrap_or_default();
     let manifest_payload = std::env::var("FARCASTER_MANIFEST_PAYLOAD").unwrap_or_default();
@@ -42,7 +42,7 @@ pub async fn handle_farcaster_manifest() -> impl IntoResponse {
 /// Serves the Mini App home page with fc:frame meta tags
 pub async fn handle_miniapp_home() -> impl IntoResponse {
     let base_url = std::env::var("BEACON_BASE_URL")
-        .unwrap_or_else(|_| "https://api.beaconcloud.org".to_string());
+        .unwrap_or_else(|_| "https://www.beaconcloud.org".to_string());
 
     let fc_frame = serde_json::json!({
         "version": "next",
@@ -95,7 +95,7 @@ pub async fn handle_miniapp_agent(
     Path(id): Path<String>,
 ) -> Result<impl IntoResponse, StatusCode> {
     let base_url = std::env::var("BEACON_BASE_URL")
-        .unwrap_or_else(|_| "https://api.beaconcloud.org".to_string());
+        .unwrap_or_else(|_| "https://www.beaconcloud.org".to_string());
 
     let agent = db::get_registry_agent(&id)
         .await
