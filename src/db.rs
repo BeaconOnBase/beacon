@@ -300,6 +300,117 @@ pub async fn get_a2a_endpoint(agent_id: &str) -> Result<Option<String>> {
     Ok(rows.first().and_then(|r| r["endpoint_url"].as_str().map(|s| s.to_string())))
 }
 
+// ── Agent Tags ──────────────────────────────────────────────────────
+
+const AGENT_TAGS_TABLE: &str = "agent_tags";
+
+pub async fn replace_agent_tags(agent_id: &str, tags: &[String]) -> Result<()> {
+    let db = client()?;
+
+    // Delete existing tags
+    db.from(AGENT_TAGS_TABLE)
+        .eq("agent_id", agent_id)
+        .delete()
+        .execute()
+        .await
+        .context("Failed to delete existing tags")?;
+
+    // Insert new tags
+    if !tags.is_empty() {
+        let rows: Vec<serde_json::Value> = tags.iter().map(|tag| {
+            json!({
+                "id": Uuid::new_v4().to_string(),
+                "agent_id": agent_id,
+                "tag": tag,
+            })
+        }).collect();
+
+        db.from(AGENT_TAGS_TABLE)
+            .insert(serde_json::to_string(&rows)?)
+            .execute()
+            .await
+            .context("Failed to insert tags")?;
+    }
+
+    Ok(())
+}
+
+pub async fn get_agent_tags(agent_id: &str) -> Result<Vec<crate::tags::AgentTag>> {
+    let db = client()?;
+
+    let resp = db.from(AGENT_TAGS_TABLE)
+        .eq("agent_id", agent_id)
+        .select("*")
+        .order("tag.asc")
+        .execute()
+        .await
+        .context("Failed to get agent tags")?;
+
+    let body = resp.text().await?;
+    let rows: Vec<crate::tags::AgentTag> = serde_json::from_str(&body)?;
+    Ok(rows)
+}
+
+pub async fn delete_agent_tag(agent_id: &str, tag: &str) -> Result<()> {
+    let db = client()?;
+
+    db.from(AGENT_TAGS_TABLE)
+        .eq("agent_id", agent_id)
+        .eq("tag", tag)
+        .delete()
+        .execute()
+        .await
+        .context("Failed to delete agent tag")?;
+
+    Ok(())
+}
+
+pub async fn get_agents_by_tag(tag: &str, limit: usize, offset: usize) -> Result<Vec<String>> {
+    let db = client()?;
+
+    let resp = db.from(AGENT_TAGS_TABLE)
+        .eq("tag", tag)
+        .select("agent_id")
+        .range(offset, offset + limit - 1)
+        .execute()
+        .await
+        .context("Failed to get agents by tag")?;
+
+    let body = resp.text().await?;
+    let rows: Vec<serde_json::Value> = serde_json::from_str(&body)?;
+    Ok(rows.iter().filter_map(|r| r["agent_id"].as_str().map(|s| s.to_string())).collect())
+}
+
+pub async fn get_popular_tags(limit: usize) -> Result<Vec<crate::tags::TagCount>> {
+    let db = client()?;
+
+    // Get all tags and count client-side (PostgREST doesn't support GROUP BY easily)
+    let resp = db.from(AGENT_TAGS_TABLE)
+        .select("tag")
+        .execute()
+        .await
+        .context("Failed to get tags for counting")?;
+
+    let body = resp.text().await?;
+    let rows: Vec<serde_json::Value> = serde_json::from_str(&body)?;
+
+    let mut counts: std::collections::HashMap<String, i64> = std::collections::HashMap::new();
+    for row in &rows {
+        if let Some(tag) = row["tag"].as_str() {
+            *counts.entry(tag.to_string()).or_insert(0) += 1;
+        }
+    }
+
+    let mut tag_counts: Vec<crate::tags::TagCount> = counts.into_iter()
+        .map(|(tag, count)| crate::tags::TagCount { tag, count })
+        .collect();
+
+    tag_counts.sort_by(|a, b| b.count.cmp(&a.count));
+    tag_counts.truncate(limit);
+
+    Ok(tag_counts)
+}
+
 // ── PostgREST / Supabase (Cloud API) ────────────────────────────────
 
 

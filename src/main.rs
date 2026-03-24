@@ -14,6 +14,7 @@ mod registry;
 mod ipfs;
 mod eas;
 mod a2a;
+mod tags;
 
 mod tests;
 mod db;
@@ -583,6 +584,7 @@ async fn handle_a2a_register_endpoint(
     }
 }
 
+
 #[tokio::main]
 async fn main() -> AnyResult<()> {
     tracing_subscriber::fmt::init();
@@ -714,7 +716,8 @@ async fn main() -> AnyResult<()> {
                 .with_route("/api/a2a/discover", get(handle_a2a_discover))
                 .with_route("/api/a2a/messages", post(handle_a2a_send))
                 .with_route("/api/a2a/messages/{agent_id}", get(handle_a2a_inbox))
-                .with_route("/api/a2a/endpoint", post(handle_a2a_register_endpoint));
+                .with_route("/api/a2a/endpoint", post(handle_a2a_register_endpoint))
+;
 
             println!("{} Beacon API & MCP Server", random_emoji());
             println!("   http://0.0.0.0:{}", port);
