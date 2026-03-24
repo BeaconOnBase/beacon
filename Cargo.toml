@@ -2,6 +2,7 @@
 name = "beacon"
 
 version = "0.3.7"
+
 edition = "2021"
 
 [[bin]]
