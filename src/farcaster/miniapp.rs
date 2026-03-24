@@ -27,7 +27,7 @@ pub async fn handle_farcaster_manifest() -> impl IntoResponse {
             "name": "Beacon",
             "iconUrl": format!("{}/banner.png", base_url),
             "homeUrl": format!("{}/miniapp", base_url),
-            "splashBackgroundColor": "#0a0a0f",
+            "splashBackgroundColor": "#09090b",
             "webhookUrl": format!("{}/api/farcaster/webhook", base_url),
         }
     });
@@ -53,7 +53,7 @@ pub async fn handle_miniapp_home() -> impl IntoResponse {
                 "type": "launch_frame",
                 "name": "Beacon",
                 "url": format!("{}/miniapp", base_url),
-                "splashBackgroundColor": "#0a0a0f"
+                "splashBackgroundColor": "#09090b"
             }
         }
     });
@@ -177,7 +177,7 @@ pub async fn handle_miniapp_agent(
                 "type": "launch_frame",
                 "name": "Beacon",
                 "url": format!("{}/miniapp/agent/{}", base_url, id),
-                "splashBackgroundColor": "#0a0a0f"
+                "splashBackgroundColor": "#09090b"
             }
         }
     });
@@ -204,19 +204,19 @@ pub async fn handle_miniapp_agent(
         "<style>",
         ".agent-header { margin-bottom: 24px; }",
         ".agent-header h2 { font-size: 28px; margin: 0 0 8px 0; }",
-        ".agent-header .desc { color: #94a3b8; font-size: 16px; }",
+        ".agent-header .desc { color: #a1a1aa; font-size: 16px; }",
         ".badge { display: inline-block; padding: 4px 12px; border-radius: 12px; font-size: 12px; font-weight: 600; }",
         ".badge.verified { background: #22c55e; color: white; }",
-        ".badge.framework { background: #6366f1; color: white; }",
+        ".badge.framework { background: #3f3f46; color: white; }",
         ".stats-row { display: flex; gap: 16px; margin: 16px 0; }",
-        ".stat { background: #1a1a2e; padding: 12px 20px; border-radius: 8px; text-align: center; }",
+        ".stat { background: #18181b; padding: 12px 20px; border-radius: 8px; text-align: center; }",
         ".stat .num { font-size: 24px; font-weight: bold; }",
-        ".stat .label { font-size: 12px; color: #94a3b8; }",
-        ".section-title { font-size: 18px; margin: 24px 0 12px; color: #e2e8f0; }",
-        ".cap-item, .ep-item { background: #1a1a2e; padding: 10px 14px; border-radius: 6px; margin-bottom: 6px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }",
-        ".cap-item code, .ep-item code { color: #6366f1; font-size: 14px; }",
-        ".ep-item .method { background: #6366f1; color: white; padding: 2px 8px; border-radius: 4px; font-size: 12px; font-weight: bold; }",
-        ".back-link { color: #6366f1; text-decoration: none; font-size: 14px; display: inline-block; margin-bottom: 16px; }",
+        ".stat .label { font-size: 12px; color: #a1a1aa; }",
+        ".section-title { font-size: 18px; margin: 24px 0 12px; color: #f4f4f5; }",
+        ".cap-item, .ep-item { background: #18181b; padding: 10px 14px; border-radius: 6px; margin-bottom: 6px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }",
+        ".cap-item code, .ep-item code { color: #a1a1aa; font-size: 14px; }",
+        ".ep-item .method { background: #3f3f46; color: white; padding: 2px 8px; border-radius: 4px; font-size: 12px; font-weight: bold; }",
+        ".back-link { color: #a1a1aa; text-decoration: none; font-size: 14px; display: inline-block; margin-bottom: 16px; }",
         "</style>",
     );
 
@@ -257,32 +257,32 @@ fn escape_html(s: &str) -> String {
 
 const MINIAPP_STYLES: &str = r#"<style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { background: #0a0a0f; color: #e2e8f0; font-family: -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif; }
+    body { background: #09090b; color: #f4f4f5; font-family: -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif; }
     #app { max-width: 600px; margin: 0 auto; padding: 16px; }
     header { text-align: center; padding: 20px 0 12px; }
     header h1 { font-size: 24px; letter-spacing: 4px; color: white; }
-    header .subtitle { color: #64748b; font-size: 13px; margin-top: 4px; }
+    header .subtitle { color: #71717a; font-size: 13px; margin-top: 4px; }
     nav { display: flex; gap: 8px; margin-bottom: 16px; }
-    .tab { flex: 1; padding: 10px; background: #1a1a2e; border: 1px solid #1e293b; border-radius: 8px; color: #94a3b8; font-size: 14px; cursor: pointer; font-weight: 500; }
-    .tab.active { background: #6366f1; color: white; border-color: #6366f1; }
+    .tab { flex: 1; padding: 10px; background: #18181b; border: 1px solid #27272a; border-radius: 8px; color: #a1a1aa; font-size: 14px; cursor: pointer; font-weight: 500; }
+    .tab.active { background: #3f3f46; color: white; border-color: #3f3f46; }
     .panel { display: none; }
     .panel.active { display: block; }
     .search-bar { margin-bottom: 12px; }
-    .search-bar input, .scan-form input { width: 100%; padding: 12px 16px; background: #1a1a2e; border: 1px solid #1e293b; border-radius: 8px; color: white; font-size: 14px; outline: none; }
-    .search-bar input:focus, .scan-form input:focus { border-color: #6366f1; }
+    .search-bar input, .scan-form input { width: 100%; padding: 12px 16px; background: #18181b; border: 1px solid #27272a; border-radius: 8px; color: white; font-size: 14px; outline: none; }
+    .search-bar input:focus, .scan-form input:focus { border-color: #52525b; }
     .scan-form { display: flex; gap: 8px; margin-bottom: 16px; }
     .scan-form input { flex: 1; }
-    .scan-form button { padding: 12px 24px; background: #6366f1; color: white; border: none; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 14px; white-space: nowrap; }
+    .scan-form button { padding: 12px 24px; background: #3f3f46; color: white; border: none; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 14px; white-space: nowrap; }
     .scan-form button:disabled { opacity: 0.5; cursor: not-allowed; }
     .agents-grid { display: flex; flex-direction: column; gap: 8px; }
-    .agent-card { background: #1a1a2e; border: 1px solid #1e293b; border-radius: 10px; padding: 14px; cursor: pointer; transition: border-color 0.2s; }
-    .agent-card:hover { border-color: #6366f1; }
+    .agent-card { background: #18181b; border: 1px solid #27272a; border-radius: 10px; padding: 14px; cursor: pointer; transition: border-color 0.2s; }
+    .agent-card:hover { border-color: #52525b; }
     .agent-card h3 { font-size: 16px; color: white; margin-bottom: 4px; }
-    .agent-card p { font-size: 13px; color: #94a3b8; line-height: 1.4; }
-    .agent-card .meta { display: flex; gap: 12px; margin-top: 8px; font-size: 12px; color: #64748b; }
-    .result-box { background: #1a1a2e; border: 1px solid #1e293b; border-radius: 10px; padding: 16px; min-height: 100px; white-space: pre-wrap; font-size: 13px; line-height: 1.5; }
+    .agent-card p { font-size: 13px; color: #a1a1aa; line-height: 1.4; }
+    .agent-card .meta { display: flex; gap: 12px; margin-top: 8px; font-size: 12px; color: #71717a; }
+    .result-box { background: #18181b; border: 1px solid #27272a; border-radius: 10px; padding: 16px; min-height: 100px; white-space: pre-wrap; font-size: 13px; line-height: 1.5; }
     .result-box:empty { display: none; }
-    .loading { color: #64748b; text-align: center; padding: 20px; }
+    .loading { color: #71717a; text-align: center; padding: 20px; }
     .error { color: #ef4444; }
 </style>"#;
 
