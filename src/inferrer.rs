@@ -23,6 +23,8 @@ const OPENAI_URL: &str =
     "https://api.openai.com/v1/chat/completions";
 const DEEPSEEK_URL: &str =
     "https://api.deepseek.com/chat/completions";
+const QWEN_URL: &str =
+    "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions";
 
 pub async fn infer_capabilities(
     ctx: &RepoContext,
@@ -50,11 +52,15 @@ pub async fn infer_capabilities(
             let key = resolve_key(api_key, "DEEPSEEK_API_KEY", "deepseek")?;
             call_deepseek(&prompt, &key).await?
         }
+        "qwen" => {
+            let key = resolve_key(api_key, "DASHSCOPE_API_KEY", "qwen")?;
+            call_qwen(&prompt, &key).await?
+        }
         "beacon-ai-cloud" => {
             call_beacon_cloud(ctx, &prompt).await?
         }
         other => anyhow::bail!(
-            "Unknown provider '{}'. Valid options: gemini, claude, openai, deepseek, beacon-ai-cloud",
+            "Unknown provider '{}'. Valid options: gemini, claude, openai, deepseek, qwen, beacon-ai-cloud",
             other
         ),
     };
@@ -186,11 +192,43 @@ async fn call_deepseek(prompt: &str, api_key: &str) -> Result<AgentsManifest> {
         .context("Unexpected DeepSeek response shape")?;
 
     parse_manifest(text)
-}
+    }
 
+    async fn call_qwen(prompt: &str, api_key: &str) -> Result<AgentsManifest> {
+    let response = CLIENT
+        .post(QWEN_URL)
+        .bearer_auth(api_key)
+        .json(&json!({
+            "model": "qwen-max",
+            "temperature": 0.2,
+            "response_format": { "type": "json_object" },
+            "messages": [
+                {
+                    "role": "system",
+                    "content": "You are an expert at analyzing software repositories. Always respond with valid JSON only."
+                },
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+            ]
+        }))
+        .send()
+        .await
+        .context("Failed to reach Qwen API (DashScope)")?;
 
+    check_status(&response, "Qwen")?;
 
-const BEACON_CLOUD_URL: &str = "https://api.beaconcloud.org";
+    let raw: Value = response.json().await?;
+    let text = raw["choices"][0]["message"]["content"]
+        .as_str()
+        .context("Unexpected Qwen response shape")?;
+
+    parse_manifest(text)
+    }
+
+    const BEACON_CLOUD_URL: &str = "https://api.beaconcloud.org";
+
 
 async fn call_beacon_cloud(ctx: &RepoContext, _prompt: &str) -> Result<AgentsManifest> {
     let beacon_url = std::env::var("BEACON_CLOUD_URL")

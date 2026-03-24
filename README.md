@@ -84,6 +84,7 @@ beacon register ./ --chain base
 | Gemini 2.5 Flash | `gemini` (default) | `GEMINI_API_KEY` |
 | Claude | `claude` | `CLAUDE_API_KEY` |
 | DeepSeek | `deepseek` | `DEEPSEEK_API_KEY` |
+| Qwen (Max) | `qwen` | `DASHSCOPE_API_KEY` |
 | Beacon Cloud | `beacon-ai-cloud` | none — $0.09/run via USDC |
 
 ---
