@@ -626,6 +626,46 @@ async fn handle_a2a_register_endpoint(
     }
 }
 
+// ── Health Monitoring Handlers ──────────────────────────────────────
+
+async fn handle_health_check_agent(
+    Path(id): Path<String>,
+) -> StdResult<impl IntoResponse, StatusCode> {
+    match health::HealthMonitor::check_agent(&id).await {
+        Ok(status) => Ok(Json(status).into_response()),
+        Err(e) => {
+            tracing::error!("Health check failed: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+async fn handle_health_status(
+    Path(id): Path<String>,
+) -> StdResult<impl IntoResponse, StatusCode> {
+    match health::HealthMonitor::get_status(&id).await {
+        Ok(Some(status)) => Ok(Json(status).into_response()),
+        Ok(None) => Err(StatusCode::NOT_FOUND),
+        Err(e) => {
+            tracing::error!("Get health status failed: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+async fn handle_health_list(
+    Query(params): Query<health::HealthQuery>,
+) -> StdResult<impl IntoResponse, StatusCode> {
+    let limit = 50;
+    match health::HealthMonitor::list_statuses(params.status.as_deref(), limit).await {
+        Ok(statuses) => Ok(Json(statuses).into_response()),
+        Err(e) => {
+            tracing::error!("List health statuses failed: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
 // ── Analytics Handlers ──────────────────────────────────────────────
 
 async fn handle_agent_stats(
