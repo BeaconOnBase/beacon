@@ -147,6 +147,18 @@ struct GenerateRequest {
     api_key: Option<String>,
 }
 
+#[derive(Deserialize)]
+struct ScanGenerateRequest {
+    github_url: String,
+    provider: Option<String>,
+}
+
+#[derive(Serialize)]
+struct ScanGenerateResponse {
+    manifest: models::AgentsManifest,
+    agents_md: String,
+}
+
 #[derive(Serialize)]
 struct GenerateResponse {
     success: bool,
@@ -381,6 +393,33 @@ async fn handle_validate(
         endpoint_results: Some(result.endpoint_results),
         error: None,
     }).into_response())
+}
+
+// ── Scan & Generate (GitHub URL) ─────────────────────────────────────
+
+async fn handle_scan_generate(
+    Json(body): Json<ScanGenerateRequest>,
+) -> StdResult<impl IntoResponse, StatusCode> {
+    let provider = body.provider.as_deref().unwrap_or("gemini");
+    let github_token = std::env::var("GITHUB_TOKEN").ok();
+
+    let ctx = farcaster::github_scanner::scan_remote(&body.github_url, github_token.as_deref())
+        .await
+        .map_err(|e| {
+            tracing::error!("GitHub scan failed: {}", e);
+            StatusCode::BAD_REQUEST
+        })?;
+
+    let manifest = inferrer::infer_capabilities(&ctx, provider, None)
+        .await
+        .map_err(|e| {
+            tracing::error!("Inference failed: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+
+    let agents_md = generator::render_markdown(&manifest);
+
+    Ok(Json(ScanGenerateResponse { manifest, agents_md }).into_response())
 }
 
 // ── Registry API Handlers ────────────────────────────────────────────
@@ -812,6 +851,7 @@ async fn main() -> AnyResult<()> {
                 .with_route("/health", get(health))
                 .with_route("/validate", post(handle_validate).with_state(state.clone()))
                 .with_route("/generate", post(handle_generate).with_state(state))
+                .with_route("/api/generate", post(handle_scan_generate))
                 .with_route("/api/registry", get(handle_registry_search))
                 .with_route("/api/registry", post(handle_registry_register))
                 .with_route("/api/registry/{id}", get(handle_registry_get))
