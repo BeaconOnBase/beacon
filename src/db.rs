@@ -6,21 +6,35 @@ use crate::models::AgentsManifest;
 
 // ── Agent Registry (Supabase/PostgREST) ─────────────────────────────
 
-const AGENT_REGISTRY_TABLE: &str = "agent_registry";
+const AGENT_REGISTRY_TABLE: &str = "agent_manifests";
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct AgentRegistryEntry {
-    pub id: String,
+    pub id: Uuid,
     pub name: String,
     pub description: String,
+    pub manifest_json: serde_json::Value,
+    #[serde(default)]
+    pub capabilities_count: i32,
+    #[serde(default)]
+    pub endpoints_count: i32,
+    pub run_id: Option<String>,
+    pub on_chain_id: Option<String>,
+    pub fid: Option<i64>,
+    pub created_at: Option<String>,
+    // Fields used by registry but not in DB — kept for API compat
+    #[serde(default)]
     pub basename: Option<String>,
-    pub manifest_json: Option<serde_json::Value>,
+    #[serde(default)]
     pub manifest_cid: Option<String>,
-    pub owner_address: String,
+    #[serde(default)]
+    pub owner_address: Option<String>,
+    #[serde(default)]
     pub wallet_address: Option<String>,
+    #[serde(default)]
     pub framework: Option<String>,
+    #[serde(default)]
     pub tx_hash: Option<String>,
-    pub registered_at: Option<String>,
 }
 
 pub async fn register_agent(entry: &AgentRegistryEntry) -> Result<()> {
@@ -28,16 +42,14 @@ pub async fn register_agent(entry: &AgentRegistryEntry) -> Result<()> {
 
     db.from(AGENT_REGISTRY_TABLE)
         .insert(json!([{
-            "id": entry.id,
             "name": entry.name,
             "description": entry.description,
-            "basename": entry.basename,
             "manifest_json": entry.manifest_json,
-            "manifest_cid": entry.manifest_cid,
-            "owner_address": entry.owner_address,
-            "wallet_address": entry.wallet_address,
-            "framework": entry.framework,
-            "tx_hash": entry.tx_hash,
+            "capabilities_count": entry.capabilities_count,
+            "endpoints_count": entry.endpoints_count,
+            "run_id": entry.run_id,
+            "on_chain_id": entry.on_chain_id,
+            "fid": entry.fid,
         }]).to_string())
         .execute()
         .await
@@ -53,7 +65,7 @@ pub async fn search_registry(query: Option<&str>, limit: usize, offset: usize) -
         if q.is_empty() {
             db.from(AGENT_REGISTRY_TABLE)
                 .select("*")
-                .order("registered_at.desc")
+                .order("created_at.desc")
                 .range(offset, offset + limit - 1)
                 .execute()
                 .await
@@ -62,7 +74,7 @@ pub async fn search_registry(query: Option<&str>, limit: usize, offset: usize) -
             db.from(AGENT_REGISTRY_TABLE)
                 .select("*")
                 .or(format!("name.ilike.%{}%,description.ilike.%{}%", q, q))
-                .order("registered_at.desc")
+                .order("created_at.desc")
                 .range(offset, offset + limit - 1)
                 .execute()
                 .await
@@ -71,7 +83,7 @@ pub async fn search_registry(query: Option<&str>, limit: usize, offset: usize) -
     } else {
         db.from(AGENT_REGISTRY_TABLE)
             .select("*")
-            .order("registered_at.desc")
+            .order("created_at.desc")
             .range(offset, offset + limit - 1)
             .execute()
             .await
@@ -123,7 +135,7 @@ pub async fn search_registry_advanced(
 
     let mut query = db.from(AGENT_REGISTRY_TABLE)
         .select("*")
-        .order("registered_at.desc")
+        .order("created_at.desc")
         .range(offset, offset + limit - 1);
 
     if let Some(fw) = framework {

@@ -139,11 +139,10 @@ impl A2AProtocol {
         let agents: Vec<DiscoveredAgent> = entries.into_iter().map(|e| {
             // Extract capabilities from manifest_json if available
             let capabilities = e.manifest_json
-                .as_ref()
-                .and_then(|m| m.get("capabilities"))
-                .and_then(|c| c.as_array())
-                .map(|arr| arr.iter().filter_map(|v| {
-                    v.get("name").and_then(|n| n.as_str()).map(|s| s.to_string())
+                .get("capabilities")
+                .and_then(|c: &serde_json::Value| c.as_array())
+                .map(|arr: &Vec<serde_json::Value>| arr.iter().filter_map(|v: &serde_json::Value| {
+                    v.get("name").and_then(|n: &serde_json::Value| n.as_str()).map(|s: &str| s.to_string())
                 }).collect())
                 .unwrap_or_default();
 
@@ -151,7 +150,7 @@ impl A2AProtocol {
             let endpoint_url = e.wallet_address.clone(); // reuse field for now
 
             DiscoveredAgent {
-                agent_id: e.id,
+                agent_id: e.id.to_string(),
                 name: e.name,
                 description: e.description,
                 capabilities,
@@ -237,7 +236,7 @@ impl A2AProtocol {
         let agent = crate::db::get_registry_agent(&reg.agent_id).await?
             .context("Agent not found")?;
 
-        if agent.owner_address.to_lowercase() != reg.owner_address.to_lowercase() {
+        if agent.owner_address.as_deref().unwrap_or_default().to_lowercase() != reg.owner_address.to_lowercase() {
             anyhow::bail!("Only the agent owner can register an endpoint");
         }
 
