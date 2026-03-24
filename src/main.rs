@@ -26,7 +26,7 @@ use axum::{
     extract::{Path, Query, State},
     http::{HeaderMap, StatusCode},
     response::IntoResponse,
-    routing::{get, post},
+    routing::{get, post, put},
     Json,
 };
 use rust_mcp_sdk::{
@@ -584,6 +584,71 @@ async fn handle_a2a_register_endpoint(
     }
 }
 
+
+// ── Tags & Categories Handlers ──────────────────────────────────────
+
+async fn handle_set_tags(
+    Path(id): Path<String>,
+    Json(req): Json<tags::TagUpdateRequest>,
+) -> StdResult<impl IntoResponse, StatusCode> {
+    match tags::AgentTags::set_tags(&id, &req.tags).await {
+        Ok(tags) => Ok(Json(tags).into_response()),
+        Err(e) => {
+            tracing::error!("Set tags failed: {}", e);
+            Err(StatusCode::BAD_REQUEST)
+        }
+    }
+}
+
+async fn handle_get_tags(
+    Path(id): Path<String>,
+) -> StdResult<impl IntoResponse, StatusCode> {
+    match tags::AgentTags::get_tags(&id).await {
+        Ok(tags) => Ok(Json(tags).into_response()),
+        Err(e) => {
+            tracing::error!("Get tags failed: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+async fn handle_search_by_tag(
+    Query(params): Query<tags::TagQuery>,
+) -> StdResult<impl IntoResponse, StatusCode> {
+    let tag = params.tag.as_deref().unwrap_or("");
+    if tag.is_empty() {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+    let limit = params.limit.unwrap_or(50).min(100);
+    let offset = params.offset.unwrap_or(0);
+    match tags::AgentTags::search_by_tag(tag, limit, offset).await {
+        Ok(agent_ids) => Ok(Json(agent_ids).into_response()),
+        Err(e) => {
+            tracing::error!("Search by tag failed: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+async fn handle_popular_tags(
+    Query(params): Query<std::collections::HashMap<String, String>>,
+) -> StdResult<impl IntoResponse, StatusCode> {
+    let limit = params.get("limit")
+        .and_then(|l| l.parse().ok())
+        .unwrap_or(20usize)
+        .min(100);
+    match tags::AgentTags::get_popular_tags(limit).await {
+        Ok(tags) => Ok(Json(tags).into_response()),
+        Err(e) => {
+            tracing::error!("Get popular tags failed: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+async fn handle_categories() -> impl IntoResponse {
+    Json(tags::AgentTags::get_categories())
+}
 
 #[tokio::main]
 async fn main() -> AnyResult<()> {
