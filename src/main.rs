@@ -782,7 +782,12 @@ async fn main() -> AnyResult<()> {
                 .with_route("/api/a2a/messages", post(handle_a2a_send))
                 .with_route("/api/a2a/messages/{agent_id}", get(handle_a2a_inbox))
                 .with_route("/api/a2a/endpoint", post(handle_a2a_register_endpoint))
-;
+                // Tags & categories
+                .with_route("/api/registry/{id}/tags", put(handle_set_tags))
+                .with_route("/api/registry/{id}/tags", get(handle_get_tags))
+                .with_route("/api/tags/search", get(handle_search_by_tag))
+                .with_route("/api/tags/popular", get(handle_popular_tags))
+                .with_route("/api/tags/categories", get(handle_categories));
 
             println!("{} Beacon API & MCP Server", random_emoji());
             println!("   http://0.0.0.0:{}", port);
@@ -800,6 +805,11 @@ async fn main() -> AnyResult<()> {
             println!("   POST /api/a2a/messages              — send agent-to-agent message");
             println!("   GET  /api/a2a/messages/{{id}}          — get agent inbox");
             println!("   POST /api/a2a/endpoint              — register agent endpoint");
+            println!("   PUT  /api/registry/{{id}}/tags        — set agent tags");
+            println!("   GET  /api/registry/{{id}}/tags        — get agent tags");
+            println!("   GET  /api/tags/search               — search agents by tag");
+            println!("   GET  /api/tags/popular              — popular tags");
+            println!("   GET  /api/tags/categories           — list categories");
             println!("   GET  /sse                           — MCP Server (SSE)");
             println!("   GET  /health                        — health check");
 
