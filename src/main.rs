@@ -836,7 +836,12 @@ async fn main() -> AnyResult<()> {
                 .with_route("/api/registry/{id}/tags", get(handle_get_tags))
                 .with_route("/api/tags/search", get(handle_search_by_tag))
                 .with_route("/api/tags/popular", get(handle_popular_tags))
-                .with_route("/api/tags/categories", get(handle_categories));
+                .with_route("/api/tags/categories", get(handle_categories))
+                .with_route("/.well-known/farcaster.json", get(farcaster::miniapp::handle_farcaster_manifest))
+                .with_route("/miniapp", get(farcaster::miniapp::handle_miniapp_home))
+                .with_route("/miniapp/agent/{id}", get(farcaster::miniapp::handle_miniapp_agent))
+                .with_route("/og/agent/{id}", get(farcaster::og::handle_og_image))
+                .with_route("/og/default.png", get(farcaster::og::handle_og_default));
 
             println!("{} Beacon API & MCP Server", random_emoji());
             println!("   http://0.0.0.0:{}", port);
