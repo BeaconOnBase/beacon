@@ -399,7 +399,7 @@ async fn handle_validate(
 
 async fn handle_scan_generate(
     Json(body): Json<ScanGenerateRequest>,
-) -> StdResult<impl IntoResponse, StatusCode> {
+) -> StdResult<impl IntoResponse, (StatusCode, String)> {
     let provider = body.provider.as_deref().unwrap_or("gemini");
     let github_token = std::env::var("GITHUB_TOKEN").ok();
 
@@ -407,19 +407,19 @@ async fn handle_scan_generate(
         .await
         .map_err(|e| {
             tracing::error!("GitHub scan failed: {}", e);
-            StatusCode::BAD_REQUEST
+            (StatusCode::BAD_REQUEST, format!("Scan failed: {}", e))
         })?;
 
     let manifest = inferrer::infer_capabilities(&ctx, provider, None)
         .await
         .map_err(|e| {
             tracing::error!("Inference failed: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
+            (StatusCode::INTERNAL_SERVER_ERROR, format!("Inference failed: {}", e))
         })?;
 
     let agents_md = generator::render_markdown(&manifest);
 
-    Ok(Json(ScanGenerateResponse { manifest, agents_md }).into_response())
+    Ok(Json(ScanGenerateResponse { manifest, agents_md }))
 }
 
 // ── Registry API Handlers ────────────────────────────────────────────
