@@ -489,8 +489,7 @@ async fn handle_registry_pin(
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
         .ok_or(StatusCode::NOT_FOUND)?;
 
-    let manifest = agent.manifest_json
-        .ok_or(StatusCode::BAD_REQUEST)?;
+    let manifest = agent.manifest_json.clone();
 
     let client = ipfs::IpfsClient::from_env()
         .map_err(|e| {
@@ -542,7 +541,7 @@ async fn handle_create_attestation(
         &result.attestation_uid,
         &result.tx_hash,
         &result.schema_uid,
-        &agent.owner_address,
+        agent.owner_address.as_deref().unwrap_or_default(),
     ).await.ok();
 
     Ok(Json(result).into_response())

@@ -27,7 +27,7 @@ async function loadAgents(query) {
             return;
         }
         list.innerHTML = items.map(a => `
-            <div class="agent-card" onclick="window.location.href=\`${BASE}/miniapp/agent/${a.id}\`">
+            <div class="agent-card" onclick="window.location.href=\`${BASE}/miniapp/agent/${a.agent_id}\`">
                 <h3>${esc(a.name)}</h3>
                 <p>${esc(a.description || "")}</p>
                 <div class="meta">
