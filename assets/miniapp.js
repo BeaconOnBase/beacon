@@ -50,7 +50,7 @@ window.startScan = async function() {
     btn.textContent = "Scanning...";
     result.textContent = "Scanning repository...";
     try {
-        const resp = await fetch(`${BASE}/generate`, {
+        const resp = await fetch(`${BASE}/api/generate`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ github_url: url })
