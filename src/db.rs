@@ -142,6 +142,363 @@ pub async fn search_registry_advanced(
     Ok(entries)
 }
 
+// ── EAS Attestations ────────────────────────────────────────────────
+
+const ATTESTATIONS_TABLE: &str = "agent_attestations";
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct AgentAttestationRow {
+    pub id: String,
+    pub agent_id: String,
+    pub attestation_uid: String,
+    pub schema_uid: String,
+    pub tx_hash: String,
+    pub attester: String,
+    pub revoked: Option<bool>,
+    pub created_at: Option<String>,
+}
+
+pub async fn insert_attestation(
+    agent_id: &str,
+    attestation_uid: &str,
+    tx_hash: &str,
+    schema_uid: &str,
+    attester: &str,
+) -> Result<()> {
+    let db = client()?;
+
+    db.from(ATTESTATIONS_TABLE)
+        .insert(json!([{
+            "id": uuid::Uuid::new_v4().to_string(),
+            "agent_id": agent_id,
+            "attestation_uid": attestation_uid,
+            "schema_uid": schema_uid,
+            "tx_hash": tx_hash,
+            "attester": attester,
+            "revoked": false,
+        }]).to_string())
+        .execute()
+        .await
+        .context("Failed to insert attestation")?;
+
+    Ok(())
+}
+
+pub async fn get_attestations_for_agent(agent_id: &str) -> Result<Vec<AgentAttestationRow>> {
+    let db = client()?;
+
+    let resp = db.from(ATTESTATIONS_TABLE)
+        .eq("agent_id", agent_id)
+        .select("*")
+        .order("created_at.desc")
+        .execute()
+        .await
+        .context("Failed to get attestations")?;
+
+    let body = resp.text().await?;
+    let rows: Vec<AgentAttestationRow> = serde_json::from_str(&body)?;
+    Ok(rows)
+}
+
+pub async fn get_attestation_by_uid(uid: &str) -> Result<Option<AgentAttestationRow>> {
+    let db = client()?;
+
+    let resp = db.from(ATTESTATIONS_TABLE)
+        .eq("attestation_uid", uid)
+        .select("*")
+        .execute()
+        .await
+        .context("Failed to get attestation")?;
+
+    let body = resp.text().await?;
+    let rows: Vec<AgentAttestationRow> = serde_json::from_str(&body)?;
+    Ok(rows.into_iter().next())
+}
+
+// ── A2A Messaging ───────────────────────────────────────────────────
+
+const A2A_MESSAGES_TABLE: &str = "a2a_messages";
+const A2A_ENDPOINTS_TABLE: &str = "a2a_endpoints";
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct A2AMessageRow {
+    pub id: String,
+    pub from_agent_id: String,
+    pub to_agent_id: String,
+    pub message_type: String,
+    pub payload: serde_json::Value,
+    pub reply_to: Option<String>,
+    pub status: String,
+    pub created_at: Option<String>,
+}
+
+pub async fn insert_a2a_message(msg: &A2AMessageRow) -> Result<()> {
+    let db = client()?;
+
+    db.from(A2A_MESSAGES_TABLE)
+        .insert(json!([{
+            "id": msg.id,
+            "from_agent_id": msg.from_agent_id,
+            "to_agent_id": msg.to_agent_id,
+            "message_type": msg.message_type,
+            "payload": msg.payload,
+            "reply_to": msg.reply_to,
+            "status": msg.status,
+        }]).to_string())
+        .execute()
+        .await
+        .context("Failed to insert A2A message")?;
+
+    Ok(())
+}
+
+pub async fn get_a2a_messages(agent_id: &str, limit: usize) -> Result<Vec<A2AMessageRow>> {
+    let db = client()?;
+
+    let resp = db.from(A2A_MESSAGES_TABLE)
+        .eq("to_agent_id", agent_id)
+        .select("*")
+        .order("created_at.desc")
+        .range(0, limit - 1)
+        .execute()
+        .await
+        .context("Failed to get A2A messages")?;
+
+    let body = resp.text().await?;
+    let rows: Vec<A2AMessageRow> = serde_json::from_str(&body)?;
+    Ok(rows)
+}
+
+pub async fn upsert_a2a_endpoint(agent_id: &str, endpoint_url: &str) -> Result<()> {
+    let db = client()?;
+
+    db.from(A2A_ENDPOINTS_TABLE)
+        .upsert(json!([{
+            "agent_id": agent_id,
+            "endpoint_url": endpoint_url,
+            "updated_at": chrono::Utc::now().to_rfc3339(),
+        }]).to_string())
+        .execute()
+        .await
+        .context("Failed to upsert A2A endpoint")?;
+
+    Ok(())
+}
+
+pub async fn get_a2a_endpoint(agent_id: &str) -> Result<Option<String>> {
+    let db = client()?;
+
+    let resp = db.from(A2A_ENDPOINTS_TABLE)
+        .eq("agent_id", agent_id)
+        .select("endpoint_url")
+        .execute()
+        .await
+        .context("Failed to get A2A endpoint")?;
+
+    let body = resp.text().await?;
+    let rows: Vec<serde_json::Value> = serde_json::from_str(&body)?;
+    Ok(rows.first().and_then(|r| r["endpoint_url"].as_str().map(|s| s.to_string())))
+}
+
+// ── Agent Analytics ─────────────────────────────────────────────────
+
+const ANALYTICS_EVENTS_TABLE: &str = "analytics_events";
+const AGENT_STATS_TABLE: &str = "agent_stats";
+
+pub async fn insert_analytics_event(event: &crate::analytics::AnalyticsEvent) -> Result<()> {
+    let db = client()?;
+
+    db.from(ANALYTICS_EVENTS_TABLE)
+        .insert(json!([{
+            "id": event.id,
+            "agent_id": event.agent_id,
+            "event_type": event.event_type,
+            "metadata": event.metadata,
+        }]).to_string())
+        .execute()
+        .await
+        .context("Failed to insert analytics event")?;
+
+    Ok(())
+}
+
+pub async fn get_analytics_events(
+    agent_id: &str,
+    event_type: Option<&str>,
+    limit: usize,
+    offset: usize,
+) -> Result<Vec<crate::analytics::AnalyticsEvent>> {
+    let db = client()?;
+
+    let mut query = db.from(ANALYTICS_EVENTS_TABLE)
+        .eq("agent_id", agent_id)
+        .select("*")
+        .order("created_at.desc")
+        .range(offset, offset + limit - 1);
+
+    if let Some(et) = event_type {
+        query = query.eq("event_type", et);
+    }
+
+    let resp = query.execute().await
+        .context("Failed to get analytics events")?;
+
+    let body = resp.text().await?;
+    let rows: Vec<crate::analytics::AnalyticsEvent> = serde_json::from_str(&body)?;
+    Ok(rows)
+}
+
+pub async fn get_agent_stats(agent_id: &str) -> Result<crate::analytics::AgentStats> {
+    let db = client()?;
+
+    let resp = db.from(AGENT_STATS_TABLE)
+        .eq("agent_id", agent_id)
+        .select("*")
+        .execute()
+        .await
+        .context("Failed to get agent stats")?;
+
+    let body = resp.text().await?;
+    let rows: Vec<crate::analytics::AgentStats> = serde_json::from_str(&body)?;
+
+    Ok(rows.into_iter().next().unwrap_or(crate::analytics::AgentStats {
+        agent_id: agent_id.to_string(),
+        total_discoveries: 0,
+        total_messages_received: 0,
+        total_messages_sent: 0,
+        total_attestations: 0,
+        total_health_checks: 0,
+        last_active: None,
+    }))
+}
+
+pub async fn get_trending_agents(limit: usize) -> Result<Vec<crate::analytics::AgentStats>> {
+    let db = client()?;
+
+    let resp = db.from(AGENT_STATS_TABLE)
+        .select("*")
+        .order("total_discoveries.desc")
+        .range(0, limit - 1)
+        .execute()
+        .await
+        .context("Failed to get trending agents")?;
+
+    let body = resp.text().await?;
+    let rows: Vec<crate::analytics::AgentStats> = serde_json::from_str(&body)?;
+    Ok(rows)
+}
+
+// ── Agent Tags ──────────────────────────────────────────────────────
+
+const AGENT_TAGS_TABLE: &str = "agent_tags";
+
+pub async fn replace_agent_tags(agent_id: &str, tags: &[String]) -> Result<()> {
+    let db = client()?;
+
+    // Delete existing tags
+    db.from(AGENT_TAGS_TABLE)
+        .eq("agent_id", agent_id)
+        .delete()
+        .execute()
+        .await
+        .context("Failed to delete existing tags")?;
+
+    // Insert new tags
+    if !tags.is_empty() {
+        let rows: Vec<serde_json::Value> = tags.iter().map(|tag| {
+            json!({
+                "id": Uuid::new_v4().to_string(),
+                "agent_id": agent_id,
+                "tag": tag,
+            })
+        }).collect();
+
+        db.from(AGENT_TAGS_TABLE)
+            .insert(serde_json::to_string(&rows)?)
+            .execute()
+            .await
+            .context("Failed to insert tags")?;
+    }
+
+    Ok(())
+}
+
+pub async fn get_agent_tags(agent_id: &str) -> Result<Vec<crate::tags::AgentTag>> {
+    let db = client()?;
+
+    let resp = db.from(AGENT_TAGS_TABLE)
+        .eq("agent_id", agent_id)
+        .select("*")
+        .order("tag.asc")
+        .execute()
+        .await
+        .context("Failed to get agent tags")?;
+
+    let body = resp.text().await?;
+    let rows: Vec<crate::tags::AgentTag> = serde_json::from_str(&body)?;
+    Ok(rows)
+}
+
+pub async fn delete_agent_tag(agent_id: &str, tag: &str) -> Result<()> {
+    let db = client()?;
+
+    db.from(AGENT_TAGS_TABLE)
+        .eq("agent_id", agent_id)
+        .eq("tag", tag)
+        .delete()
+        .execute()
+        .await
+        .context("Failed to delete agent tag")?;
+
+    Ok(())
+}
+
+pub async fn get_agents_by_tag(tag: &str, limit: usize, offset: usize) -> Result<Vec<String>> {
+    let db = client()?;
+
+    let resp = db.from(AGENT_TAGS_TABLE)
+        .eq("tag", tag)
+        .select("agent_id")
+        .range(offset, offset + limit - 1)
+        .execute()
+        .await
+        .context("Failed to get agents by tag")?;
+
+    let body = resp.text().await?;
+    let rows: Vec<serde_json::Value> = serde_json::from_str(&body)?;
+    Ok(rows.iter().filter_map(|r| r["agent_id"].as_str().map(|s| s.to_string())).collect())
+}
+
+pub async fn get_popular_tags(limit: usize) -> Result<Vec<crate::tags::TagCount>> {
+    let db = client()?;
+
+    // Get all tags and count client-side (PostgREST doesn't support GROUP BY easily)
+    let resp = db.from(AGENT_TAGS_TABLE)
+        .select("tag")
+        .execute()
+        .await
+        .context("Failed to get tags for counting")?;
+
+    let body = resp.text().await?;
+    let rows: Vec<serde_json::Value> = serde_json::from_str(&body)?;
+
+    let mut counts: std::collections::HashMap<String, i64> = std::collections::HashMap::new();
+    for row in &rows {
+        if let Some(tag) = row["tag"].as_str() {
+            *counts.entry(tag.to_string()).or_insert(0) += 1;
+        }
+    }
+
+    let mut tag_counts: Vec<crate::tags::TagCount> = counts.into_iter()
+        .map(|(tag, count)| crate::tags::TagCount { tag, count })
+        .collect();
+
+    tag_counts.sort_by(|a, b| b.count.cmp(&a.count));
+    tag_counts.truncate(limit);
+
+    Ok(tag_counts)
+}
+
 // ── PostgREST / Supabase (Cloud API) ────────────────────────────────
 
 

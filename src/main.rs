@@ -12,6 +12,10 @@ mod mcp;
 mod openclaw;
 mod registry;
 mod ipfs;
+mod eas;
+mod a2a;
+mod analytics;
+mod tags;
 
 mod tests;
 mod db;
@@ -23,7 +27,7 @@ use axum::{
     extract::{Path, Query, State},
     http::{HeaderMap, StatusCode},
     response::IntoResponse,
-    routing::{get, post},
+    routing::{get, post, put},
     Json,
 };
 use rust_mcp_sdk::{
@@ -469,6 +473,227 @@ async fn handle_registry_pin(
     Ok(Json(result).into_response())
 }
 
+// ── EAS Attestation Handlers ────────────────────────────────────────
+
+async fn handle_create_attestation(
+    Path(id): Path<String>,
+    Json(req): Json<eas::AttestRequest>,
+) -> StdResult<impl IntoResponse, StatusCode> {
+    let agent = db::get_registry_agent(&id).await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    let client = eas::EasClient::from_env()
+        .map_err(|e| {
+            tracing::error!("EAS client error: {}", e);
+            StatusCode::SERVICE_UNAVAILABLE
+        })?;
+
+    let result = client.create_attestation(&req).await
+        .map_err(|e| {
+            tracing::error!("EAS attestation failed: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+
+    // Store attestation in DB
+    db::insert_attestation(
+        &id,
+        &result.attestation_uid,
+        &result.tx_hash,
+        &result.schema_uid,
+        &agent.owner_address,
+    ).await.ok();
+
+    Ok(Json(result).into_response())
+}
+
+async fn handle_get_attestation(
+    Path(uid): Path<String>,
+) -> StdResult<impl IntoResponse, StatusCode> {
+    let attestation = db::get_attestation_by_uid(&uid).await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    Ok(Json(attestation).into_response())
+}
+
+async fn handle_get_agent_attestations(
+    Path(id): Path<String>,
+) -> StdResult<impl IntoResponse, StatusCode> {
+    let attestations = db::get_attestations_for_agent(&id).await
+        .map_err(|e| {
+            tracing::error!("Failed to get attestations: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+
+    Ok(Json(attestations).into_response())
+}
+
+// ── A2A Protocol Handlers ───────────────────────────────────────────
+
+async fn handle_a2a_discover(
+    Query(params): Query<a2a::DiscoveryQuery>,
+) -> StdResult<impl IntoResponse, StatusCode> {
+    match a2a::A2AProtocol::discover(&params).await {
+        Ok(result) => Ok(Json(result).into_response()),
+        Err(e) => {
+            tracing::error!("A2A discovery failed: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+async fn handle_a2a_send(
+    Json(msg): Json<a2a::A2AMessage>,
+) -> StdResult<impl IntoResponse, StatusCode> {
+    match a2a::A2AProtocol::send_message(&msg).await {
+        Ok(resp) => Ok(Json(resp).into_response()),
+        Err(e) => {
+            tracing::error!("A2A send failed: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+async fn handle_a2a_inbox(
+    Path(agent_id): Path<String>,
+    Query(params): Query<std::collections::HashMap<String, String>>,
+) -> StdResult<impl IntoResponse, StatusCode> {
+    let limit = params.get("limit")
+        .and_then(|l| l.parse().ok())
+        .unwrap_or(50usize)
+        .min(100);
+
+    match a2a::A2AProtocol::get_messages(&agent_id, limit).await {
+        Ok(messages) => Ok(Json(messages).into_response()),
+        Err(e) => {
+            tracing::error!("A2A inbox failed: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+async fn handle_a2a_register_endpoint(
+    Json(reg): Json<a2a::EndpointRegistration>,
+) -> StdResult<impl IntoResponse, StatusCode> {
+    match a2a::A2AProtocol::register_endpoint(&reg).await {
+        Ok(()) => Ok(Json(serde_json::json!({ "status": "ok" })).into_response()),
+        Err(e) => {
+            tracing::error!("A2A endpoint registration failed: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+// ── Analytics Handlers ──────────────────────────────────────────────
+
+async fn handle_agent_stats(
+    Path(id): Path<String>,
+) -> StdResult<impl IntoResponse, StatusCode> {
+    match analytics::AgentAnalytics::get_stats(&id).await {
+        Ok(stats) => Ok(Json(stats).into_response()),
+        Err(e) => {
+            tracing::error!("Get agent stats failed: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+async fn handle_agent_events(
+    Path(id): Path<String>,
+    Query(params): Query<analytics::AnalyticsQuery>,
+) -> StdResult<impl IntoResponse, StatusCode> {
+    let limit = params.limit.unwrap_or(50).min(100);
+    let offset = params.offset.unwrap_or(0);
+    match analytics::AgentAnalytics::get_events(&id, params.event_type.as_deref(), limit, offset).await {
+        Ok(events) => Ok(Json(events).into_response()),
+        Err(e) => {
+            tracing::error!("Get agent events failed: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+async fn handle_trending_agents(
+    Query(params): Query<std::collections::HashMap<String, String>>,
+) -> StdResult<impl IntoResponse, StatusCode> {
+    let limit = params.get("limit")
+        .and_then(|l| l.parse().ok())
+        .unwrap_or(20usize)
+        .min(100);
+    match analytics::AgentAnalytics::get_trending(limit).await {
+        Ok(trending) => Ok(Json(trending).into_response()),
+        Err(e) => {
+            tracing::error!("Get trending agents failed: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+// ── Tags & Categories Handlers ──────────────────────────────────────
+
+async fn handle_set_tags(
+    Path(id): Path<String>,
+    Json(req): Json<tags::TagUpdateRequest>,
+) -> StdResult<impl IntoResponse, StatusCode> {
+    match tags::AgentTags::set_tags(&id, &req.tags).await {
+        Ok(tags) => Ok(Json(tags).into_response()),
+        Err(e) => {
+            tracing::error!("Set tags failed: {}", e);
+            Err(StatusCode::BAD_REQUEST)
+        }
+    }
+}
+
+async fn handle_get_tags(
+    Path(id): Path<String>,
+) -> StdResult<impl IntoResponse, StatusCode> {
+    match tags::AgentTags::get_tags(&id).await {
+        Ok(tags) => Ok(Json(tags).into_response()),
+        Err(e) => {
+            tracing::error!("Get tags failed: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+async fn handle_search_by_tag(
+    Query(params): Query<tags::TagQuery>,
+) -> StdResult<impl IntoResponse, StatusCode> {
+    let tag = params.tag.as_deref().unwrap_or("");
+    if tag.is_empty() {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+    let limit = params.limit.unwrap_or(50).min(100);
+    let offset = params.offset.unwrap_or(0);
+    match tags::AgentTags::search_by_tag(tag, limit, offset).await {
+        Ok(agent_ids) => Ok(Json(agent_ids).into_response()),
+        Err(e) => {
+            tracing::error!("Search by tag failed: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+async fn handle_popular_tags(
+    Query(params): Query<std::collections::HashMap<String, String>>,
+) -> StdResult<impl IntoResponse, StatusCode> {
+    let limit = params.get("limit")
+        .and_then(|l| l.parse().ok())
+        .unwrap_or(20usize)
+        .min(100);
+    match tags::AgentTags::get_popular_tags(limit).await {
+        Ok(tags) => Ok(Json(tags).into_response()),
+        Err(e) => {
+            tracing::error!("Get popular tags failed: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+async fn handle_categories() -> impl IntoResponse {
+    Json(tags::AgentTags::get_categories())
+}
 
 #[tokio::main]
 async fn main() -> AnyResult<()> {
@@ -593,12 +818,25 @@ async fn main() -> AnyResult<()> {
                 .with_route("/api/basenames/resolve/{name}", get(handle_basename_resolve))
                 // IPFS pinning
                 .with_route("/api/registry/{id}/pin", post(handle_registry_pin))
-                // Mini App & OG embeds
-                .with_route("/miniapp", get(farcaster::miniapp::handle_miniapp_home))
-                .with_route("/miniapp/agent/{id}", get(farcaster::miniapp::handle_miniapp_agent))
-                .with_route("/og/agent/{id}", get(farcaster::og::handle_og_image))
-                .with_route("/og/default.png", get(farcaster::og::handle_og_default))
-                .with_route("/.well-known/farcaster.json", get(farcaster::miniapp::handle_farcaster_manifest));
+                // EAS attestations
+                .with_route("/api/registry/{id}/attest", post(handle_create_attestation))
+                .with_route("/api/registry/{id}/attestations", get(handle_get_agent_attestations))
+                .with_route("/api/attestations/{uid}", get(handle_get_attestation))
+                // A2A protocol
+                .with_route("/api/a2a/discover", get(handle_a2a_discover))
+                .with_route("/api/a2a/messages", post(handle_a2a_send))
+                .with_route("/api/a2a/messages/{agent_id}", get(handle_a2a_inbox))
+                .with_route("/api/a2a/endpoint", post(handle_a2a_register_endpoint))
+                // Analytics
+                .with_route("/api/registry/{id}/stats", get(handle_agent_stats))
+                .with_route("/api/registry/{id}/events", get(handle_agent_events))
+                .with_route("/api/analytics/trending", get(handle_trending_agents))
+                // Tags & categories
+                .with_route("/api/registry/{id}/tags", put(handle_set_tags))
+                .with_route("/api/registry/{id}/tags", get(handle_get_tags))
+                .with_route("/api/tags/search", get(handle_search_by_tag))
+                .with_route("/api/tags/popular", get(handle_popular_tags))
+                .with_route("/api/tags/categories", get(handle_categories));
 
             println!("{} Beacon API & MCP Server", random_emoji());
             println!("   http://0.0.0.0:{}", port);
@@ -608,12 +846,23 @@ async fn main() -> AnyResult<()> {
             println!("   POST /api/registry                  — register an agent");
             println!("   GET  /api/registry/{{id}}              — get agent by ID");
             println!("   POST /api/registry/{{id}}/pin         — pin manifest to IPFS");
+            println!("   POST /api/registry/{{id}}/attest      — create EAS attestation");
+            println!("   GET  /api/registry/{{id}}/attestations — get agent attestations");
+            println!("   GET  /api/attestations/{{uid}}         — get attestation by UID");
             println!("   GET  /api/basenames/{{name}}           — resolve basename");
+            println!("   GET  /api/a2a/discover              — discover agents by capability");
+            println!("   POST /api/a2a/messages              — send agent-to-agent message");
+            println!("   GET  /api/a2a/messages/{{id}}          — get agent inbox");
+            println!("   POST /api/a2a/endpoint              — register agent endpoint");
+            println!("   GET  /api/registry/{{id}}/stats       — get agent analytics");
+            println!("   GET  /api/registry/{{id}}/events      — get agent event log");
+            println!("   GET  /api/analytics/trending        — trending agents");
+            println!("   PUT  /api/registry/{{id}}/tags        — set agent tags");
+            println!("   GET  /api/registry/{{id}}/tags        — get agent tags");
+            println!("   GET  /api/tags/search               — search agents by tag");
+            println!("   GET  /api/tags/popular              — popular tags");
+            println!("   GET  /api/tags/categories           — list categories");
             println!("   GET  /sse                           — MCP Server (SSE)");
-            println!("   GET  /miniapp                       — Farcaster Mini App");
-            println!("   GET  /miniapp/agent/{{id}}             — Agent detail page");
-            println!("   GET  /og/agent/{{id}}                  — Agent OG image");
-            println!("   GET  /.well-known/farcaster.json    — Farcaster manifest");
             println!("   GET  /health                        — health check");
 
             // Start farcaster bot in background if configured
