@@ -25,7 +25,7 @@ pub async fn handle_farcaster_manifest() -> impl IntoResponse {
         "frame": {
             "version": "1",
             "name": "Beacon",
-            "iconUrl": format!("{}/og/default.png", base_url),
+            "iconUrl": format!("{}/banner.png", base_url),
             "homeUrl": format!("{}/miniapp", base_url),
             "splashBackgroundColor": "#0a0a0f",
             "webhookUrl": format!("{}/api/farcaster/webhook", base_url),
@@ -46,7 +46,7 @@ pub async fn handle_miniapp_home() -> impl IntoResponse {
 
     let fc_frame = serde_json::json!({
         "version": "next",
-        "imageUrl": format!("{}/og/default.png", base_url),
+        "imageUrl": format!("{}/banner.png", base_url),
         "button": {
             "title": "Open Beacon",
             "action": {
@@ -65,7 +65,7 @@ pub async fn handle_miniapp_home() -> impl IntoResponse {
         "<title>Beacon - Agent Registry</title>",
         &format!("<meta property=\"og:title\" content=\"Beacon - The Verifiable Agentic Protocol\"/>"),
         "<meta property=\"og:description\" content=\"Browse, scan, and register AI agents on Base.\"/>",
-        &format!("<meta property=\"og:image\" content=\"{}/og/default.png\"/>", base_url),
+        &format!("<meta property=\"og:image\" content=\"{}/banner.png\"/>", base_url),
         &format!("<meta property=\"fc:frame\" content='{}' />", fc_frame),
         MINIAPP_STYLES,
         "</head><body><div id=\"app\">",
