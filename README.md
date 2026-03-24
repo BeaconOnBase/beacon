@@ -3,7 +3,7 @@
 
 ![Language](https://img.shields.io/badge/built%20with-Rust-orange?style=flat-square&logo=rust)
 ![Tests](https://img.shields.io/github/actions/workflow/status/BeaconOnBase/beacon/release.yml?label=tests&style=flat-square)
-![Version](https://img.shields.io/badge/version-0.3.7-blue?style=flat-square)
+![Version](https://img.shields.io/badge/version-0.3.8-blue?style=flat-square)
 ![License](https://img.shields.io/badge/license-BUSL--1.1-blue?style=flat-square)
 
 **The Verifiable Agentic Protocol.** Make any repository agent-ready. Instantly.
@@ -14,6 +14,8 @@ Beacon is a protocol designed for the Web 4.0 agentic economy. It scans your cod
 
 ## Core Features
 
+- **Verifiable Generation (ZK):** Crytographically prove that `AGENTS.md` matches a specific Git state via SP1 Zero-Knowledge proofs.
+- **A2A Discovery Protocol:** Full support for the Google Agent-to-Agent standard (`agent-card.json`) and JSON-RPC messaging.
 - **AI-Powered Inference:** Automatically generate AAIF-compliant [AGENTS.md](https://github.com/agentmd/agent.md) manifests.
 - **On-Chain Identity:** Register your repository's provenance on Base Mainnet via ERC-7527.
 - **Native MCP Server:** Standards-compliant tool discovery for LLMs (Claude, Cursor, etc.).
@@ -31,10 +33,17 @@ curl -fsSL https://raw.githubusercontent.com/BeaconOnBase/beacon/master/install.
 
 ## Quickstart
 
-**1. Generate Manifest**
+**1. Generate Verifiable Manifest**
 ```bash
 export GEMINI_API_KEY=your_key
-beacon generate ./my-project
+beacon generate ./my-project --zk
+# Produces AGENTS.md + agent-card.json with SP1 proofs
+```
+
+**2. Discover Other Agents (A2A)**
+```bash
+beacon a2a discover --capability "token_swap"
+# Finds compatible agents via the A2A Discovery Protocol
 ```
 
 **2. Register On-Chain Identity**

@@ -300,6 +300,67 @@ pub async fn get_a2a_endpoint(agent_id: &str) -> Result<Option<String>> {
     Ok(rows.first().and_then(|r| r["endpoint_url"].as_str().map(|s| s.to_string())))
 }
 
+// ── Health Monitoring ────────────────────────────────────────────────
+
+const HEALTH_STATUS_TABLE: &str = "agent_health_status";
+
+pub async fn upsert_health_status(status: &crate::health::HealthStatus) -> Result<()> {
+    let db = client()?;
+
+    db.from(HEALTH_STATUS_TABLE)
+        .upsert(json!([{
+            "agent_id": status.agent_id,
+            "status": status.status.to_string(),
+            "latency_ms": status.latency_ms,
+            "last_checked": status.last_checked,
+            "endpoint": status.endpoint,
+            "error": status.error,
+        }]).to_string())
+        .execute()
+        .await
+        .context("Failed to upsert health status")?;
+
+    Ok(())
+}
+
+pub async fn get_health_status(agent_id: &str) -> Result<Option<crate::health::HealthStatus>> {
+    let db = client()?;
+
+    let resp = db.from(HEALTH_STATUS_TABLE)
+        .eq("agent_id", agent_id)
+        .select("*")
+        .execute()
+        .await
+        .context("Failed to get health status")?;
+
+    let body = resp.text().await?;
+    let rows: Vec<crate::health::HealthStatus> = serde_json::from_str(&body)?;
+    Ok(rows.into_iter().next())
+}
+
+pub async fn list_health_statuses(
+    status_filter: Option<&str>,
+    limit: usize,
+) -> Result<Vec<crate::health::HealthStatus>> {
+    let db = client()?;
+
+    let mut query = db.from(HEALTH_STATUS_TABLE)
+        .select("*")
+        .order("last_checked.desc")
+        .range(0, limit - 1);
+
+    if let Some(status) = status_filter {
+        query = query.eq("status", status);
+    }
+
+    let resp = query.execute().await
+        .context("Failed to list health statuses")?;
+
+    let body = resp.text().await?;
+    let rows: Vec<crate::health::HealthStatus> = serde_json::from_str(&body)?;
+    Ok(rows)
+}
+
 // ── Agent Analytics ─────────────────────────────────────────────────
 
 const ANALYTICS_EVENTS_TABLE: &str = "analytics_events";

@@ -6,6 +6,7 @@ mod generator;
 mod validator;
 mod models;
 mod verifier;
+mod zk;
 mod errors;
 mod identity;
 mod mcp;
@@ -14,6 +15,7 @@ mod registry;
 mod ipfs;
 mod eas;
 mod a2a;
+mod health;
 mod analytics;
 mod tags;
 
@@ -27,7 +29,7 @@ use axum::{
     extract::{Path, Query, State},
     http::{HeaderMap, StatusCode},
     response::IntoResponse,
-    routing::{get, post, put},
+    routing::{get, post, put, delete},
     Json,
 };
 use rust_mcp_sdk::{
@@ -624,6 +626,46 @@ async fn handle_a2a_register_endpoint(
     }
 }
 
+// ── Health Monitoring Handlers ──────────────────────────────────────
+
+async fn handle_health_check_agent(
+    Path(id): Path<String>,
+) -> StdResult<impl IntoResponse, StatusCode> {
+    match health::HealthMonitor::check_agent(&id).await {
+        Ok(status) => Ok(Json(status).into_response()),
+        Err(e) => {
+            tracing::error!("Health check failed: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+async fn handle_health_status(
+    Path(id): Path<String>,
+) -> StdResult<impl IntoResponse, StatusCode> {
+    match health::HealthMonitor::get_status(&id).await {
+        Ok(Some(status)) => Ok(Json(status).into_response()),
+        Ok(None) => Err(StatusCode::NOT_FOUND),
+        Err(e) => {
+            tracing::error!("Get health status failed: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+async fn handle_health_list(
+    Query(params): Query<health::HealthQuery>,
+) -> StdResult<impl IntoResponse, StatusCode> {
+    let limit = 50;
+    match health::HealthMonitor::list_statuses(params.status.as_deref(), limit).await {
+        Ok(statuses) => Ok(Json(statuses).into_response()),
+        Err(e) => {
+            tracing::error!("List health statuses failed: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
 // ── Analytics Handlers ──────────────────────────────────────────────
 
 async fn handle_agent_stats(
@@ -867,6 +909,10 @@ async fn main() -> AnyResult<()> {
                 .with_route("/api/a2a/messages", post(handle_a2a_send))
                 .with_route("/api/a2a/messages/{agent_id}", get(handle_a2a_inbox))
                 .with_route("/api/a2a/endpoint", post(handle_a2a_register_endpoint))
+                // Health monitoring
+                .with_route("/api/registry/{id}/health", post(handle_health_check_agent))
+                .with_route("/api/registry/{id}/health", get(handle_health_status))
+                .with_route("/api/health", get(handle_health_list))
                 // Analytics
                 .with_route("/api/registry/{id}/stats", get(handle_agent_stats))
                 .with_route("/api/registry/{id}/events", get(handle_agent_events))
@@ -899,6 +945,9 @@ async fn main() -> AnyResult<()> {
             println!("   POST /api/a2a/messages              — send agent-to-agent message");
             println!("   GET  /api/a2a/messages/{{id}}          — get agent inbox");
             println!("   POST /api/a2a/endpoint              — register agent endpoint");
+            println!("   POST /api/registry/{{id}}/health      — ping agent health check");
+            println!("   GET  /api/registry/{{id}}/health      — get agent health status");
+            println!("   GET  /api/health                    — list all health statuses");
             println!("   GET  /api/registry/{{id}}/stats       — get agent analytics");
             println!("   GET  /api/registry/{{id}}/events      — get agent event log");
             println!("   GET  /api/analytics/trending        — trending agents");
