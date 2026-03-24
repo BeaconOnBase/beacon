@@ -15,6 +15,49 @@ pub struct AgentsManifest {
     pub authentication: Option<Authentication>,
     pub rate_limits: Option<RateLimits>,
     pub contact: Option<String>,
+    // ZK Fields
+    pub source_hash: Option<String>,
+    pub zk_proof: Option<String>,
+    pub generation_timestamp: Option<i64>,
+}
+
+// ── Google A2A Agent Card ───────────────────────────────────────────
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentCard {
+    pub protocol_version: String,
+    pub name: String,
+    pub description: String,
+    pub version: String,
+    pub url: String,
+    pub icon_url: Option<String>,
+    pub provider: Option<AgentProvider>,
+    pub capabilities: AgentCardCapabilities,
+    pub skills: Vec<AgentSkill>,
+    #[serde(default)]
+    pub security_schemes: serde_json::Value,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct AgentProvider {
+    pub organization: String,
+    pub url: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct AgentCardCapabilities {
+    pub streaming: bool,
+    pub push_notifications: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentSkill {
+    pub name: String,
+    pub description: String,
+    pub input_schema: Option<serde_json::Value>,
+    pub output_schema: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

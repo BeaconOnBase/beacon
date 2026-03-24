@@ -71,13 +71,60 @@ pub struct EndpointRegistration {
     pub owner_address: String,
 }
 
+use crate::models::AgentCard;
+
+// ── JSON-RPC 2.0 ───────────────────────────────────────────────────
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct JsonRpcRequest {
+    pub jsonrpc: String,
+    pub method: String,
+    pub params: serde_json::Value,
+    pub id: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct JsonRpcResponse {
+    pub jsonrpc: String,
+    pub result: Option<serde_json::Value>,
+    pub error: Option<JsonRpcError>,
+    pub id: serde_json::Value,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct JsonRpcError {
+    pub code: i32,
+    pub message: String,
+    pub data: Option<serde_json::Value>,
+}
+
 // ── Protocol Implementation ──────────────────────────────────────────
 
 pub struct A2AProtocol;
 
 impl A2AProtocol {
+    /// Fetch an Agent Card from a remote agent's .well-known/agent-card.json
+    pub async fn fetch_agent_card(base_url: &str) -> Result<AgentCard> {
+        let client = reqwest::Client::new();
+        let well_known_url = format!("{}/.well-known/agent-card.json", base_url.trim_end_matches('/'));
+        
+        let res = client.get(&well_known_url).send().await?;
+        if !res.status().is_success() {
+            // Try fallback to agent.json
+            let agent_json_url = format!("{}/.well-known/agent.json", base_url.trim_end_matches('/'));
+            let res_fallback = client.get(&agent_json_url).send().await?;
+            if !res_fallback.status().is_success() {
+                anyhow::bail!("Failed to fetch Agent Card from both agent-card.json and agent.json");
+            }
+            return Ok(res_fallback.json().await?);
+        }
+        
+        Ok(res.json().await?)
+    }
+
     /// Discover agents by capability, framework, or attestation status.
     pub async fn discover(query: &DiscoveryQuery) -> Result<DiscoveryResult> {
+        // ... (keep existing implementation but maybe wrap results)
         let limit = query.limit.unwrap_or(20).min(100);
         let offset = query.offset.unwrap_or(0);
 

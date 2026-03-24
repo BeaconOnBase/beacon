@@ -6,6 +6,7 @@ mod generator;
 mod validator;
 mod models;
 mod verifier;
+mod zk;
 mod errors;
 mod identity;
 mod mcp;
