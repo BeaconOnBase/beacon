@@ -13,6 +13,7 @@ mod openclaw;
 mod registry;
 mod ipfs;
 mod eas;
+mod a2a;
 
 mod tests;
 mod db;
@@ -526,6 +527,62 @@ async fn handle_get_agent_attestations(
     Ok(Json(attestations).into_response())
 }
 
+// ── A2A Protocol Handlers ───────────────────────────────────────────
+
+async fn handle_a2a_discover(
+    Query(params): Query<a2a::DiscoveryQuery>,
+) -> StdResult<impl IntoResponse, StatusCode> {
+    match a2a::A2AProtocol::discover(&params).await {
+        Ok(result) => Ok(Json(result).into_response()),
+        Err(e) => {
+            tracing::error!("A2A discovery failed: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+async fn handle_a2a_send(
+    Json(msg): Json<a2a::A2AMessage>,
+) -> StdResult<impl IntoResponse, StatusCode> {
+    match a2a::A2AProtocol::send_message(&msg).await {
+        Ok(resp) => Ok(Json(resp).into_response()),
+        Err(e) => {
+            tracing::error!("A2A send failed: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+async fn handle_a2a_inbox(
+    Path(agent_id): Path<String>,
+    Query(params): Query<std::collections::HashMap<String, String>>,
+) -> StdResult<impl IntoResponse, StatusCode> {
+    let limit = params.get("limit")
+        .and_then(|l| l.parse().ok())
+        .unwrap_or(50usize)
+        .min(100);
+
+    match a2a::A2AProtocol::get_messages(&agent_id, limit).await {
+        Ok(messages) => Ok(Json(messages).into_response()),
+        Err(e) => {
+            tracing::error!("A2A inbox failed: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+async fn handle_a2a_register_endpoint(
+    Json(reg): Json<a2a::EndpointRegistration>,
+) -> StdResult<impl IntoResponse, StatusCode> {
+    match a2a::A2AProtocol::register_endpoint(&reg).await {
+        Ok(()) => Ok(Json(serde_json::json!({ "status": "ok" })).into_response()),
+        Err(e) => {
+            tracing::error!("A2A endpoint registration failed: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
 #[tokio::main]
 async fn main() -> AnyResult<()> {
     tracing_subscriber::fmt::init();
@@ -653,12 +710,11 @@ async fn main() -> AnyResult<()> {
                 .with_route("/api/registry/{id}/attest", post(handle_create_attestation))
                 .with_route("/api/registry/{id}/attestations", get(handle_get_agent_attestations))
                 .with_route("/api/attestations/{uid}", get(handle_get_attestation))
-                // Mini App & OG embeds
-                .with_route("/miniapp", get(farcaster::miniapp::handle_miniapp_home))
-                .with_route("/miniapp/agent/{id}", get(farcaster::miniapp::handle_miniapp_agent))
-                .with_route("/og/agent/{id}", get(farcaster::og::handle_og_image))
-                .with_route("/og/default.png", get(farcaster::og::handle_og_default))
-                .with_route("/.well-known/farcaster.json", get(farcaster::miniapp::handle_farcaster_manifest));
+                // A2A protocol
+                .with_route("/api/a2a/discover", get(handle_a2a_discover))
+                .with_route("/api/a2a/messages", post(handle_a2a_send))
+                .with_route("/api/a2a/messages/{agent_id}", get(handle_a2a_inbox))
+                .with_route("/api/a2a/endpoint", post(handle_a2a_register_endpoint));
 
             println!("{} Beacon API & MCP Server", random_emoji());
             println!("   http://0.0.0.0:{}", port);
@@ -672,11 +728,11 @@ async fn main() -> AnyResult<()> {
             println!("   GET  /api/registry/{{id}}/attestations — get agent attestations");
             println!("   GET  /api/attestations/{{uid}}         — get attestation by UID");
             println!("   GET  /api/basenames/{{name}}           — resolve basename");
+            println!("   GET  /api/a2a/discover              — discover agents by capability");
+            println!("   POST /api/a2a/messages              — send agent-to-agent message");
+            println!("   GET  /api/a2a/messages/{{id}}          — get agent inbox");
+            println!("   POST /api/a2a/endpoint              — register agent endpoint");
             println!("   GET  /sse                           — MCP Server (SSE)");
-            println!("   GET  /miniapp                       — Farcaster Mini App");
-            println!("   GET  /miniapp/agent/{{id}}             — Agent detail page");
-            println!("   GET  /og/agent/{{id}}                  — Agent OG image");
-            println!("   GET  /.well-known/farcaster.json    — Farcaster manifest");
             println!("   GET  /health                        — health check");
 
             // Start farcaster bot in background if configured

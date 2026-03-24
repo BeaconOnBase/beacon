@@ -215,6 +215,91 @@ pub async fn get_attestation_by_uid(uid: &str) -> Result<Option<AgentAttestation
     Ok(rows.into_iter().next())
 }
 
+// ── A2A Messaging ───────────────────────────────────────────────────
+
+const A2A_MESSAGES_TABLE: &str = "a2a_messages";
+const A2A_ENDPOINTS_TABLE: &str = "a2a_endpoints";
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct A2AMessageRow {
+    pub id: String,
+    pub from_agent_id: String,
+    pub to_agent_id: String,
+    pub message_type: String,
+    pub payload: serde_json::Value,
+    pub reply_to: Option<String>,
+    pub status: String,
+    pub created_at: Option<String>,
+}
+
+pub async fn insert_a2a_message(msg: &A2AMessageRow) -> Result<()> {
+    let db = client()?;
+
+    db.from(A2A_MESSAGES_TABLE)
+        .insert(json!([{
+            "id": msg.id,
+            "from_agent_id": msg.from_agent_id,
+            "to_agent_id": msg.to_agent_id,
+            "message_type": msg.message_type,
+            "payload": msg.payload,
+            "reply_to": msg.reply_to,
+            "status": msg.status,
+        }]).to_string())
+        .execute()
+        .await
+        .context("Failed to insert A2A message")?;
+
+    Ok(())
+}
+
+pub async fn get_a2a_messages(agent_id: &str, limit: usize) -> Result<Vec<A2AMessageRow>> {
+    let db = client()?;
+
+    let resp = db.from(A2A_MESSAGES_TABLE)
+        .eq("to_agent_id", agent_id)
+        .select("*")
+        .order("created_at.desc")
+        .range(0, limit - 1)
+        .execute()
+        .await
+        .context("Failed to get A2A messages")?;
+
+    let body = resp.text().await?;
+    let rows: Vec<A2AMessageRow> = serde_json::from_str(&body)?;
+    Ok(rows)
+}
+
+pub async fn upsert_a2a_endpoint(agent_id: &str, endpoint_url: &str) -> Result<()> {
+    let db = client()?;
+
+    db.from(A2A_ENDPOINTS_TABLE)
+        .upsert(json!([{
+            "agent_id": agent_id,
+            "endpoint_url": endpoint_url,
+            "updated_at": chrono::Utc::now().to_rfc3339(),
+        }]).to_string())
+        .execute()
+        .await
+        .context("Failed to upsert A2A endpoint")?;
+
+    Ok(())
+}
+
+pub async fn get_a2a_endpoint(agent_id: &str) -> Result<Option<String>> {
+    let db = client()?;
+
+    let resp = db.from(A2A_ENDPOINTS_TABLE)
+        .eq("agent_id", agent_id)
+        .select("endpoint_url")
+        .execute()
+        .await
+        .context("Failed to get A2A endpoint")?;
+
+    let body = resp.text().await?;
+    let rows: Vec<serde_json::Value> = serde_json::from_str(&body)?;
+    Ok(rows.first().and_then(|r| r["endpoint_url"].as_str().map(|s| s.to_string())))
+}
+
 // ── PostgREST / Supabase (Cloud API) ────────────────────────────────
 
 
