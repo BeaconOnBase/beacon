@@ -16,6 +16,7 @@ RUN cargo build --release --target x86_64-unknown-linux-musl
 RUN rm -rf src
 
 # Build the real binary
+COPY assets ./assets
 COPY src ./src
 RUN touch src/main.rs \
  && cargo build --release --target x86_64-unknown-linux-musl
@@ -26,6 +27,7 @@ FROM debian:bookworm-slim
 
 RUN apt-get update && apt-get install -y \
     ca-certificates \
+    fonts-dejavu-core \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /app/target/x86_64-unknown-linux-musl/release/beacon /usr/local/bin/beacon
