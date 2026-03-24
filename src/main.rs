@@ -15,6 +15,7 @@ mod registry;
 mod ipfs;
 mod eas;
 mod a2a;
+mod health;
 mod analytics;
 mod tags;
 
@@ -28,7 +29,7 @@ use axum::{
     extract::{Path, Query, State},
     http::{HeaderMap, StatusCode},
     response::IntoResponse,
-    routing::{get, post, put},
+    routing::{get, post, put, delete},
     Json,
 };
 use rust_mcp_sdk::{
