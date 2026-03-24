@@ -827,6 +827,10 @@ async fn main() -> AnyResult<()> {
                 .with_route("/api/a2a/messages", post(handle_a2a_send))
                 .with_route("/api/a2a/messages/{agent_id}", get(handle_a2a_inbox))
                 .with_route("/api/a2a/endpoint", post(handle_a2a_register_endpoint))
+                // Analytics
+                .with_route("/api/registry/{id}/stats", get(handle_agent_stats))
+                .with_route("/api/registry/{id}/events", get(handle_agent_events))
+                .with_route("/api/analytics/trending", get(handle_trending_agents))
                 // Tags & categories
                 .with_route("/api/registry/{id}/tags", put(handle_set_tags))
                 .with_route("/api/registry/{id}/tags", get(handle_get_tags))
@@ -850,6 +854,9 @@ async fn main() -> AnyResult<()> {
             println!("   POST /api/a2a/messages              — send agent-to-agent message");
             println!("   GET  /api/a2a/messages/{{id}}          — get agent inbox");
             println!("   POST /api/a2a/endpoint              — register agent endpoint");
+            println!("   GET  /api/registry/{{id}}/stats       — get agent analytics");
+            println!("   GET  /api/registry/{{id}}/events      — get agent event log");
+            println!("   GET  /api/analytics/trending        — trending agents");
             println!("   PUT  /api/registry/{{id}}/tags        — set agent tags");
             println!("   GET  /api/registry/{{id}}/tags        — get agent tags");
             println!("   GET  /api/tags/search               — search agents by tag");
