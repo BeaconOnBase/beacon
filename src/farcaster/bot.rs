@@ -36,7 +36,9 @@ impl BotConfig {
 
 pub fn parse_command(text: &str) -> BotCommand {
     let lower = text.to_lowercase();
-    let after_mention = if let Some(idx) = lower.find("@beacon") {
+    let after_mention = if let Some(idx) = lower.find("@beaconbot") {
+        &text[idx + 10..].trim()
+    } else if let Some(idx) = lower.find("@beacon") {
         &text[idx + 7..].trim()
     } else {
         text.trim()
