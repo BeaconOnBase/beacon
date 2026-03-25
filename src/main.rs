@@ -935,6 +935,8 @@ async fn main() -> AnyResult<()> {
                 .with_route("/api/tags/search", get(handle_search_by_tag))
                 .with_route("/api/tags/popular", get(handle_popular_tags))
                 .with_route("/api/tags/categories", get(handle_categories))
+                // Status page
+                .with_route("/api/status", get(handle_registry_status))
                 .with_route("/.well-known/farcaster.json", get(farcaster::miniapp::handle_farcaster_manifest))
                 .with_route("/miniapp", get(farcaster::miniapp::handle_miniapp_home))
                 .with_route("/miniapp/agent/{id}", get(farcaster::miniapp::handle_miniapp_agent))
