@@ -1,4 +1,5 @@
 use std::fs;
+use std::path::Path;
 use anyhow::Result;
 use crate::models::{AgentsManifest, AgentCard, AgentSkill, AgentCardCapabilities};
 
@@ -30,9 +31,14 @@ pub fn generate_agents_md(manifest: &AgentsManifest, output_path: &str) -> Resul
     };
 
     let card_json = serde_json::to_string_pretty(&card)?;
-    let card_path = output_path.replace("AGENTS.md", "agent-card.json");
-    fs::write(&card_path, card_json)?;
-    println!("   ✓ Generated Google A2A Agent Card: {}", card_path);
+    
+    // Use path logic to save agent-card.json in the same directory
+    let path = Path::new(output_path);
+    if let Some(parent) = path.parent() {
+        let card_path = parent.join("agent-card.json");
+        fs::write(&card_path, card_json)?;
+        println!("   ✓ Generated Google A2A Agent Card: {}", card_path.display());
+    }
 
     Ok(())
 }

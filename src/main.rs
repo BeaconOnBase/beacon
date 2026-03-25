@@ -29,7 +29,7 @@ use axum::{
     extract::{Path, Query, State},
     http::{HeaderMap, StatusCode},
     response::IntoResponse,
-    routing::{get, post, put, delete},
+    routing::{get, post, put},
     Json,
 };
 use rust_mcp_sdk::{

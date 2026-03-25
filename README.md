@@ -1,6 +1,5 @@
 # Beacon
 
-
 ![Language](https://img.shields.io/badge/built%20with-Rust-orange?style=flat-square&logo=rust)
 ![Tests](https://img.shields.io/github/actions/workflow/status/BeaconOnBase/beacon/release.yml?label=tests&style=flat-square)
 ![Version](https://img.shields.io/badge/version-0.4.0-blue?style=flat-square)

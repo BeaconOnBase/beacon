@@ -3,8 +3,7 @@ mod tests {
     use crate::scanner;
     use crate::validator;
     use crate::generator;
-    use crate::openclaw;
-    use crate::models::{AgentsManifest, Capability, Endpoint, Parameter, Authentication, RepoContext, SourceFile, Language};
+    use crate::models::{AgentsManifest, Capability, Endpoint, Parameter, Authentication};
     use std::fs;
     use std::path::Path;
 
@@ -44,6 +43,9 @@ mod tests {
             }),
             rate_limits: None,
             contact: None,
+            source_hash: None,
+            zk_proof: None,
+            generation_timestamp: None,
         }
     }
 
