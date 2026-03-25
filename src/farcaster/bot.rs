@@ -124,7 +124,7 @@ pub async fn run_bot(
                     handle_help(&neynar, cast, config.channel_id.as_str()).await;
                 }
                 BotCommand::Unknown => {
-                    handle_help(&neynar, cast, config.channel_id.as_str()).await;
+                    // Silently ignore mentions that aren't valid commands
                 }
             }
         }
