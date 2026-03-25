@@ -1,0 +1,17 @@
+{
+  "name": "@beacon-protocol/sdk",
+  "version": "0.1.0",
+  "description": "TypeScript SDK for the Beacon agent registry protocol",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": ["beacon", "agents", "ai", "registry", "a2a", "base", "x402"],
+  "license": "MIT",
+  "devDependencies": {
+    "typescript": "^5.4.0"
+  }
+}
