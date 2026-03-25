@@ -963,6 +963,8 @@ async fn main() -> AnyResult<()> {
                 .with_route("/api/tags/categories", get(handle_categories))
                 // Status page
                 .with_route("/api/status", get(handle_registry_status))
+                // Export agent card
+                .with_route("/api/registry/{id}/export", get(handle_export_card))
                 .with_route("/.well-known/farcaster.json", get(farcaster::miniapp::handle_farcaster_manifest))
                 .with_route("/miniapp", get(farcaster::miniapp::handle_miniapp_home))
                 .with_route("/miniapp/agent/{id}", get(farcaster::miniapp::handle_miniapp_agent))
@@ -997,6 +999,7 @@ async fn main() -> AnyResult<()> {
             println!("   GET  /api/tags/popular              — popular tags");
             println!("   GET  /api/tags/categories           — list categories");
             println!("   GET  /api/status                    — registry status page");
+            println!("   GET  /api/registry/{{id}}/export      — export agent card");
             println!("   GET  /sse                           — MCP Server (SSE)");
             println!("   GET  /health                        — health check");
 
