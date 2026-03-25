@@ -19,6 +19,7 @@ mod health;
 mod analytics;
 mod tags;
 mod status;
+mod export;
 
 mod tests;
 mod db;
