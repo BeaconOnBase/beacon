@@ -22,6 +22,9 @@ mod status;
 mod export;
 mod reviews;
 
+mod x402;
+mod agentic_wallet;
+
 mod tests;
 mod db;
 
@@ -778,6 +781,156 @@ async fn handle_categories() -> impl IntoResponse {
     Json(tags::AgentTags::get_categories())
 }
 
+// ── x402 Payment Protocol Handlers ──────────────────────────────────
+
+#[derive(Deserialize)]
+struct X402PriceQuery {
+    resource: Option<String>,
+}
+
+/// Returns x402 payment requirements for a given resource
+async fn handle_x402_requirements(
+    Query(params): Query<X402PriceQuery>,
+) -> StdResult<impl IntoResponse, StatusCode> {
+    let config = x402::X402Config::from_env();
+    let resource = params.resource.as_deref().unwrap_or("/generate");
+    let amount = std::env::var("PAYMENT_AMOUNT_USDC")
+        .unwrap_or_else(|_| "0.09".to_string());
+    let atomic = x402::usdc_to_atomic(&amount)
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let requirements = x402::build_payment_requirements(resource, &atomic, &config);
+    Ok(Json(requirements).into_response())
+}
+
+/// Verify an x402 payment signature
+async fn handle_x402_verify(
+    Json(body): Json<serde_json::Value>,
+) -> StdResult<impl IntoResponse, StatusCode> {
+    let config = x402::X402Config::from_env();
+
+    let payment_payload: x402::PaymentPayload = serde_json::from_value(
+        body.get("paymentPayload").cloned().unwrap_or_default()
+    ).map_err(|_| StatusCode::BAD_REQUEST)?;
+
+    let payment_requirements: x402::PaymentRequirements = serde_json::from_value(
+        body.get("paymentRequirements").cloned().unwrap_or_default()
+    ).map_err(|_| StatusCode::BAD_REQUEST)?;
+
+    match x402::verify_payment(&config.facilitator_url, &payment_payload, &payment_requirements).await {
+        Ok(valid) => Ok(Json(serde_json::json!({ "success": valid })).into_response()),
+        Err(e) => {
+            tracing::error!("x402 verify failed: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+/// Settle an x402 payment
+async fn handle_x402_settle(
+    Json(body): Json<serde_json::Value>,
+) -> StdResult<impl IntoResponse, StatusCode> {
+    let config = x402::X402Config::from_env();
+
+    let payment_payload: x402::PaymentPayload = serde_json::from_value(
+        body.get("paymentPayload").cloned().unwrap_or_default()
+    ).map_err(|_| StatusCode::BAD_REQUEST)?;
+
+    let payment_requirements: x402::PaymentRequirements = serde_json::from_value(
+        body.get("paymentRequirements").cloned().unwrap_or_default()
+    ).map_err(|_| StatusCode::BAD_REQUEST)?;
+
+    match x402::settle_payment(&config.facilitator_url, &payment_payload, &payment_requirements).await {
+        Ok(result) => Ok(Json(result).into_response()),
+        Err(e) => {
+            tracing::error!("x402 settle failed: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+/// Discover x402-enabled agents/endpoints
+async fn handle_x402_discover() -> StdResult<impl IntoResponse, StatusCode> {
+    // Search registry for agents that have x402-enabled endpoints
+    let entries = db::search_registry(None, 100, 0).await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let x402_agents: Vec<serde_json::Value> = entries.into_iter().filter_map(|e| {
+        let endpoints = e.manifest_json.get("endpoints")?.as_array()?;
+        let x402_endpoints: Vec<&serde_json::Value> = endpoints.iter()
+            .filter(|ep| ep.get("x402_enabled").and_then(|v| v.as_bool()).unwrap_or(false))
+            .collect();
+
+        if x402_endpoints.is_empty() {
+            return None;
+        }
+
+        Some(serde_json::json!({
+            "agent_id": e.id.to_string(),
+            "name": e.name,
+            "description": e.description,
+            "x402_endpoints": x402_endpoints,
+        }))
+    }).collect();
+
+    Ok(Json(x402_agents).into_response())
+}
+
+// ── Agentic Wallet Handlers ─────────────────────────────────────────
+
+/// Get wallet info for an agent
+async fn handle_get_wallet(
+    Path(id): Path<String>,
+) -> StdResult<impl IntoResponse, StatusCode> {
+    let agent = db::get_registry_agent(&id).await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    match &agent.wallet_address {
+        Some(addr) => Ok(Json(serde_json::json!({
+            "agent_id": id,
+            "wallet_address": addr,
+            "chain": "base",
+        })).into_response()),
+        None => Err(StatusCode::NOT_FOUND),
+    }
+}
+
+/// Provision or link a wallet to an agent
+async fn handle_provision_wallet(
+    Path(id): Path<String>,
+    Json(body): Json<serde_json::Value>,
+) -> StdResult<impl IntoResponse, StatusCode> {
+    // Check agent exists
+    let _agent = db::get_registry_agent(&id).await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    // Try to provision via CDP, or accept a manual wallet address
+    let wallet_address = if let Some(addr) = body.get("wallet_address").and_then(|v| v.as_str()) {
+        addr.to_string()
+    } else {
+        // Auto-provision via Coinbase CDP
+        match agentic_wallet::provision_wallet(&id).await {
+            Ok(wallet) => wallet.wallet_address,
+            Err(e) => {
+                tracing::error!("Wallet provisioning failed: {}", e);
+                return Err(StatusCode::INTERNAL_SERVER_ERROR);
+            }
+        }
+    };
+
+    // Update in database
+    db::update_agent_wallet(&id, &wallet_address).await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    Ok(Json(serde_json::json!({
+        "agent_id": id,
+        "wallet_address": wallet_address,
+        "chain": "base",
+    })).into_response())
+}
+
 // ── Status Page Handlers ────────────────────────────────────────────
 
 async fn handle_registry_status() -> StdResult<impl IntoResponse, StatusCode> {
@@ -1014,6 +1167,14 @@ async fn main() -> AnyResult<()> {
                 .with_route("/api/tags/search", get(handle_search_by_tag))
                 .with_route("/api/tags/popular", get(handle_popular_tags))
                 .with_route("/api/tags/categories", get(handle_categories))
+                // x402 payment protocol
+                .with_route("/api/x402/requirements", get(handle_x402_requirements))
+                .with_route("/api/x402/verify", post(handle_x402_verify))
+                .with_route("/api/x402/settle", post(handle_x402_settle))
+                .with_route("/api/x402/discover", get(handle_x402_discover))
+                // Agentic wallets
+                .with_route("/api/registry/{id}/wallet", get(handle_get_wallet))
+                .with_route("/api/registry/{id}/wallet", post(handle_provision_wallet))
                 // Status page
                 .with_route("/api/status", get(handle_registry_status))
                 // Export agent card
@@ -1056,6 +1217,12 @@ async fn main() -> AnyResult<()> {
             println!("   GET  /api/tags/search               — search agents by tag");
             println!("   GET  /api/tags/popular              — popular tags");
             println!("   GET  /api/tags/categories           — list categories");
+            println!("   GET  /api/x402/requirements         — get x402 payment requirements");
+            println!("   POST /api/x402/verify               — verify x402 payment");
+            println!("   POST /api/x402/settle               — settle x402 payment");
+            println!("   GET  /api/x402/discover             — discover x402-enabled agents");
+            println!("   GET  /api/registry/{{id}}/wallet      — get agent wallet");
+            println!("   POST /api/registry/{{id}}/wallet      — provision agent wallet");
             println!("   GET  /api/status                    — registry status page");
             println!("   GET  /api/registry/{{id}}/export      — export agent card");
             println!("   POST /api/registry/{{id}}/reviews     — submit a review");

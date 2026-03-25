@@ -125,6 +125,21 @@ pub async fn update_agent_manifest_cid(agent_id: &str, cid: &str) -> Result<()> 
     Ok(())
 }
 
+pub async fn update_agent_wallet(agent_id: &str, wallet_address: &str) -> Result<()> {
+    let db = client()?;
+
+    db.from(AGENT_REGISTRY_TABLE)
+        .eq("id", agent_id)
+        .update(json!({
+            "wallet_address": wallet_address
+        }).to_string())
+        .execute()
+        .await
+        .context("Failed to update agent wallet")?;
+
+    Ok(())
+}
+
 pub async fn search_registry_advanced(
     capability: Option<&str>,
     framework: Option<&str>,
