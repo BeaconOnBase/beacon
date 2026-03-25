@@ -77,6 +77,15 @@ pub struct Endpoint {
     pub description: String,
     #[serde(default)]
     pub parameters: Vec<Parameter>,
+    // x402 payment fields
+    #[serde(default)]
+    pub x402_enabled: bool,
+    #[serde(default)]
+    pub price_per_call: Option<String>,
+    #[serde(default)]
+    pub payment_currency: Option<String>,
+    #[serde(default)]
+    pub payment_network: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
