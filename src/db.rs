@@ -572,6 +572,114 @@ pub async fn get_popular_tags(limit: usize) -> Result<Vec<crate::tags::TagCount>
     Ok(tag_counts)
 }
 
+// ── Status Page ─────────────────────────────────────────────────────
+
+#[derive(Debug, Default)]
+pub struct RegistryCounts {
+    pub total: i64,
+    pub attestations: i64,
+    pub messages: i64,
+}
+
+#[derive(Debug, Default)]
+pub struct HealthCounts {
+    pub online: i64,
+    pub offline: i64,
+    pub degraded: i64,
+}
+
+pub async fn get_registry_counts() -> Result<RegistryCounts> {
+    let db = client()?;
+
+    let resp = db.from(AGENT_REGISTRY_TABLE)
+        .select("id")
+        .execute()
+        .await
+        .context("Failed to count agents")?;
+
+    let body = resp.text().await?;
+    let rows: Vec<serde_json::Value> = serde_json::from_str(&body)?;
+    let total = rows.len() as i64;
+
+    let attestations = match db.from(ATTESTATIONS_TABLE)
+        .select("id")
+        .execute()
+        .await
+    {
+        Ok(resp) => {
+            let body = resp.text().await.unwrap_or_else(|_| "[]".into());
+            let rows: Vec<serde_json::Value> = serde_json::from_str(&body).unwrap_or_default();
+            rows.len() as i64
+        }
+        Err(_) => 0,
+    };
+
+    let messages = match db.from(A2A_MESSAGES_TABLE)
+        .select("id")
+        .execute()
+        .await
+    {
+        Ok(resp) => {
+            let body = resp.text().await.unwrap_or_else(|_| "[]".into());
+            let rows: Vec<serde_json::Value> = serde_json::from_str(&body).unwrap_or_default();
+            rows.len() as i64
+        }
+        Err(_) => 0,
+    };
+
+    Ok(RegistryCounts {
+        total,
+        attestations,
+        messages,
+    })
+}
+
+pub async fn get_health_counts() -> Result<HealthCounts> {
+    let db = client()?;
+
+    let resp = db.from(HEALTH_STATUS_TABLE)
+        .select("status")
+        .execute()
+        .await
+        .context("Failed to get health counts")?;
+
+    let body = resp.text().await?;
+    let rows: Vec<serde_json::Value> = serde_json::from_str(&body)?;
+
+    let mut counts = HealthCounts::default();
+    for row in &rows {
+        match row["status"].as_str() {
+            Some("online") => counts.online += 1,
+            Some("offline") => counts.offline += 1,
+            Some("degraded") => counts.degraded += 1,
+            _ => {}
+        }
+    }
+
+    Ok(counts)
+}
+
+pub async fn get_top_tag_names(limit: usize) -> Result<Vec<String>> {
+    let tags = get_popular_tags(limit).await?;
+    Ok(tags.into_iter().map(|t| t.tag).collect())
+}
+
+pub async fn get_recent_agents(limit: usize) -> Result<Vec<crate::status::RecentAgent>> {
+    let db = client()?;
+
+    let resp = db.from(AGENT_REGISTRY_TABLE)
+        .select("id,name,description,registered_at")
+        .order("registered_at.desc")
+        .range(0, limit - 1)
+        .execute()
+        .await
+        .context("Failed to get recent agents")?;
+
+    let body = resp.text().await?;
+    let rows: Vec<crate::status::RecentAgent> = serde_json::from_str(&body)?;
+    Ok(rows)
+}
+
 // ── PostgREST / Supabase (Cloud API) ────────────────────────────────
 
 

@@ -18,6 +18,7 @@ mod a2a;
 mod health;
 mod analytics;
 mod tags;
+mod status;
 
 mod tests;
 mod db;
@@ -955,6 +956,7 @@ async fn main() -> AnyResult<()> {
             println!("   GET  /api/tags/search               — search agents by tag");
             println!("   GET  /api/tags/popular              — popular tags");
             println!("   GET  /api/tags/categories           — list categories");
+            println!("   GET  /api/status                    — registry status page");
             println!("   GET  /sse                           — MCP Server (SSE)");
             println!("   GET  /health                        — health check");
 
