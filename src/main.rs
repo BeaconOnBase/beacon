@@ -776,6 +776,18 @@ async fn handle_categories() -> impl IntoResponse {
     Json(tags::AgentTags::get_categories())
 }
 
+// ── Status Page Handlers ────────────────────────────────────────────
+
+async fn handle_registry_status() -> StdResult<impl IntoResponse, StatusCode> {
+    match status::StatusPage::get_status().await {
+        Ok(status) => Ok(Json(status).into_response()),
+        Err(e) => {
+            tracing::error!("Get registry status failed: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
 #[tokio::main]
 async fn main() -> AnyResult<()> {
     tracing_subscriber::fmt::init();
