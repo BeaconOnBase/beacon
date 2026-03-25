@@ -789,6 +789,31 @@ async fn handle_registry_status() -> StdResult<impl IntoResponse, StatusCode> {
     }
 }
 
+// ── Export Agent Card Handlers ──────────────────────────────────────
+
+async fn handle_export_card(
+    Path(id): Path<String>,
+    Query(params): Query<export::ExportQuery>,
+) -> StdResult<impl IntoResponse, StatusCode> {
+    let format = params.format.as_deref().unwrap_or("json-ld");
+    match format {
+        "a2a" => match export::AgentExport::export_a2a(&id).await {
+            Ok(card) => Ok(Json(card).into_response()),
+            Err(e) => {
+                tracing::error!("Export A2A card failed: {}", e);
+                Err(StatusCode::INTERNAL_SERVER_ERROR)
+            }
+        },
+        _ => match export::AgentExport::export_card(&id).await {
+            Ok(card) => Ok(Json(card).into_response()),
+            Err(e) => {
+                tracing::error!("Export agent card failed: {}", e);
+                Err(StatusCode::INTERNAL_SERVER_ERROR)
+            }
+        },
+    }
+}
+
 #[tokio::main]
 async fn main() -> AnyResult<()> {
     tracing_subscriber::fmt::init();
