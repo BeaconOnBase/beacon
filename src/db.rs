@@ -6,21 +6,35 @@ use crate::models::AgentsManifest;
 
 // ── Agent Registry (Supabase/PostgREST) ─────────────────────────────
 
-const AGENT_REGISTRY_TABLE: &str = "agent_registry";
+const AGENT_REGISTRY_TABLE: &str = "agent_manifests";
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct AgentRegistryEntry {
-    pub id: String,
+    pub id: Uuid,
     pub name: String,
     pub description: String,
+    pub manifest_json: serde_json::Value,
+    #[serde(default)]
+    pub capabilities_count: i32,
+    #[serde(default)]
+    pub endpoints_count: i32,
+    pub run_id: Option<String>,
+    pub on_chain_id: Option<String>,
+    pub fid: Option<i64>,
+    pub created_at: Option<String>,
+    // Fields used by registry but not in DB — kept for API compat
+    #[serde(default)]
     pub basename: Option<String>,
-    pub manifest_json: Option<serde_json::Value>,
+    #[serde(default)]
     pub manifest_cid: Option<String>,
-    pub owner_address: String,
+    #[serde(default)]
+    pub owner_address: Option<String>,
+    #[serde(default)]
     pub wallet_address: Option<String>,
+    #[serde(default)]
     pub framework: Option<String>,
+    #[serde(default)]
     pub tx_hash: Option<String>,
-    pub registered_at: Option<String>,
 }
 
 pub async fn register_agent(entry: &AgentRegistryEntry) -> Result<()> {
@@ -28,16 +42,14 @@ pub async fn register_agent(entry: &AgentRegistryEntry) -> Result<()> {
 
     db.from(AGENT_REGISTRY_TABLE)
         .insert(json!([{
-            "id": entry.id,
             "name": entry.name,
             "description": entry.description,
-            "basename": entry.basename,
             "manifest_json": entry.manifest_json,
-            "manifest_cid": entry.manifest_cid,
-            "owner_address": entry.owner_address,
-            "wallet_address": entry.wallet_address,
-            "framework": entry.framework,
-            "tx_hash": entry.tx_hash,
+            "capabilities_count": entry.capabilities_count,
+            "endpoints_count": entry.endpoints_count,
+            "run_id": entry.run_id,
+            "on_chain_id": entry.on_chain_id,
+            "fid": entry.fid,
         }]).to_string())
         .execute()
         .await
@@ -53,7 +65,7 @@ pub async fn search_registry(query: Option<&str>, limit: usize, offset: usize) -
         if q.is_empty() {
             db.from(AGENT_REGISTRY_TABLE)
                 .select("*")
-                .order("registered_at.desc")
+                .order("created_at.desc")
                 .range(offset, offset + limit - 1)
                 .execute()
                 .await
@@ -62,7 +74,7 @@ pub async fn search_registry(query: Option<&str>, limit: usize, offset: usize) -
             db.from(AGENT_REGISTRY_TABLE)
                 .select("*")
                 .or(format!("name.ilike.%{}%,description.ilike.%{}%", q, q))
-                .order("registered_at.desc")
+                .order("created_at.desc")
                 .range(offset, offset + limit - 1)
                 .execute()
                 .await
@@ -71,7 +83,7 @@ pub async fn search_registry(query: Option<&str>, limit: usize, offset: usize) -
     } else {
         db.from(AGENT_REGISTRY_TABLE)
             .select("*")
-            .order("registered_at.desc")
+            .order("created_at.desc")
             .range(offset, offset + limit - 1)
             .execute()
             .await
@@ -123,7 +135,7 @@ pub async fn search_registry_advanced(
 
     let mut query = db.from(AGENT_REGISTRY_TABLE)
         .select("*")
-        .order("registered_at.desc")
+        .order("created_at.desc")
         .range(offset, offset + limit - 1);
 
     if let Some(fw) = framework {
@@ -298,6 +310,67 @@ pub async fn get_a2a_endpoint(agent_id: &str) -> Result<Option<String>> {
     let body = resp.text().await?;
     let rows: Vec<serde_json::Value> = serde_json::from_str(&body)?;
     Ok(rows.first().and_then(|r| r["endpoint_url"].as_str().map(|s| s.to_string())))
+}
+
+// ── Health Monitoring ────────────────────────────────────────────────
+
+const HEALTH_STATUS_TABLE: &str = "agent_health_status";
+
+pub async fn upsert_health_status(status: &crate::health::HealthStatus) -> Result<()> {
+    let db = client()?;
+
+    db.from(HEALTH_STATUS_TABLE)
+        .upsert(json!([{
+            "agent_id": status.agent_id,
+            "status": status.status.to_string(),
+            "latency_ms": status.latency_ms,
+            "last_checked": status.last_checked,
+            "endpoint": status.endpoint,
+            "error": status.error,
+        }]).to_string())
+        .execute()
+        .await
+        .context("Failed to upsert health status")?;
+
+    Ok(())
+}
+
+pub async fn get_health_status(agent_id: &str) -> Result<Option<crate::health::HealthStatus>> {
+    let db = client()?;
+
+    let resp = db.from(HEALTH_STATUS_TABLE)
+        .eq("agent_id", agent_id)
+        .select("*")
+        .execute()
+        .await
+        .context("Failed to get health status")?;
+
+    let body = resp.text().await?;
+    let rows: Vec<crate::health::HealthStatus> = serde_json::from_str(&body)?;
+    Ok(rows.into_iter().next())
+}
+
+pub async fn list_health_statuses(
+    status_filter: Option<&str>,
+    limit: usize,
+) -> Result<Vec<crate::health::HealthStatus>> {
+    let db = client()?;
+
+    let mut query = db.from(HEALTH_STATUS_TABLE)
+        .select("*")
+        .order("last_checked.desc")
+        .range(0, limit - 1);
+
+    if let Some(status) = status_filter {
+        query = query.eq("status", status);
+    }
+
+    let resp = query.execute().await
+        .context("Failed to list health statuses")?;
+
+    let body = resp.text().await?;
+    let rows: Vec<crate::health::HealthStatus> = serde_json::from_str(&body)?;
+    Ok(rows)
 }
 
 // ── Agent Analytics ─────────────────────────────────────────────────

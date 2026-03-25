@@ -70,18 +70,32 @@ impl AgentRegistry {
         let agent_id = uuid::Uuid::new_v4().to_string();
         let manifest_json = serde_json::to_value(&req.manifest_json)?;
 
+        let caps_count = req.manifest_json.get("capabilities")
+            .and_then(|c| c.as_array())
+            .map(|a| a.len() as i32)
+            .unwrap_or(0);
+        let eps_count = req.manifest_json.get("endpoints")
+            .and_then(|e| e.as_array())
+            .map(|a| a.len() as i32)
+            .unwrap_or(0);
+
         let entry = crate::db::AgentRegistryEntry {
-            id: agent_id.clone(),
+            id: uuid::Uuid::parse_str(&agent_id).unwrap_or_else(|_| uuid::Uuid::new_v4()),
             name: req.name.clone(),
             description: req.description.clone(),
+            manifest_json: manifest_json,
+            capabilities_count: caps_count,
+            endpoints_count: eps_count,
+            run_id: None,
+            on_chain_id: None,
+            fid: None,
+            created_at: None,
             basename: req.basename.clone(),
-            manifest_json: Some(manifest_json),
             manifest_cid: None,
-            owner_address: req.owner_address.clone(),
+            owner_address: Some(req.owner_address.clone()),
             wallet_address: None,
             framework: None,
             tx_hash: None,
-            registered_at: None,
         };
 
         crate::db::register_agent(&entry).await?;
@@ -108,12 +122,12 @@ impl AgentRegistry {
         ).await?;
 
         Ok(entries.into_iter().map(|e| RegistryEntry {
-            agent_id: e.id,
+            agent_id: e.id.to_string(),
             name: e.name,
             description: e.description,
             basename: e.basename,
             manifest_cid: e.manifest_cid,
-            owner: e.owner_address,
+            owner: e.owner_address.unwrap_or_default(),
             wallet_address: e.wallet_address,
             registered_at: 0,
             tx_hash: e.tx_hash,
@@ -128,12 +142,12 @@ impl AgentRegistry {
         let entry = crate::db::get_registry_agent(agent_id).await?;
 
         Ok(entry.map(|e| RegistryEntry {
-            agent_id: e.id,
+            agent_id: e.id.to_string(),
             name: e.name,
             description: e.description,
             basename: e.basename,
             manifest_cid: e.manifest_cid,
-            owner: e.owner_address,
+            owner: e.owner_address.unwrap_or_default(),
             wallet_address: e.wallet_address,
             registered_at: 0,
             tx_hash: e.tx_hash,

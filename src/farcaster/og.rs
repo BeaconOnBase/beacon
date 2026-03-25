@@ -18,16 +18,14 @@ pub async fn handle_og_image(
 
     let caps_count = agent
         .manifest_json
-        .as_ref()
-        .and_then(|m| m.get("capabilities"))
+        .get("capabilities")
         .and_then(|c| c.as_array())
         .map(|a| a.len())
         .unwrap_or(0);
 
     let endpoints_count = agent
         .manifest_json
-        .as_ref()
-        .and_then(|m| m.get("endpoints"))
+        .get("endpoints")
         .and_then(|e| e.as_array())
         .map(|a| a.len())
         .unwrap_or(0);
