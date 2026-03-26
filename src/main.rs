@@ -20,6 +20,7 @@ mod analytics;
 mod tags;
 mod status;
 mod export;
+mod reviews;
 
 mod tests;
 mod db;

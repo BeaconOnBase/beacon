@@ -680,6 +680,112 @@ pub async fn get_recent_agents(limit: usize) -> Result<Vec<crate::status::Recent
     Ok(rows)
 }
 
+// ── Agent Reviews ───────────────────────────────────────────────────
+
+const REVIEWS_TABLE: &str = "agent_reviews";
+
+pub async fn insert_review(review: &crate::reviews::AgentReview) -> Result<()> {
+    let db = client()?;
+
+    db.from(REVIEWS_TABLE)
+        .insert(json!([{
+            "id": review.id,
+            "agent_id": review.agent_id,
+            "reviewer": review.reviewer,
+            "rating": review.rating,
+            "comment": review.comment,
+        }]).to_string())
+        .execute()
+        .await
+        .context("Failed to insert review")?;
+
+    Ok(())
+}
+
+pub async fn get_agent_reviews(
+    agent_id: &str,
+    limit: usize,
+    offset: usize,
+) -> Result<Vec<crate::reviews::AgentReview>> {
+    let db = client()?;
+
+    let resp = db.from(REVIEWS_TABLE)
+        .eq("agent_id", agent_id)
+        .select("*")
+        .order("created_at.desc")
+        .range(offset, offset + limit - 1)
+        .execute()
+        .await
+        .context("Failed to get reviews")?;
+
+    let body = resp.text().await?;
+    let rows: Vec<crate::reviews::AgentReview> = serde_json::from_str(&body)?;
+    Ok(rows)
+}
+
+pub async fn get_all_agent_reviews(agent_id: &str) -> Result<Vec<crate::reviews::AgentReview>> {
+    let db = client()?;
+
+    let resp = db.from(REVIEWS_TABLE)
+        .eq("agent_id", agent_id)
+        .select("*")
+        .execute()
+        .await
+        .context("Failed to get all reviews")?;
+
+    let body = resp.text().await?;
+    let rows: Vec<crate::reviews::AgentReview> = serde_json::from_str(&body)?;
+    Ok(rows)
+}
+
+pub async fn get_top_rated_agents(limit: usize) -> Result<Vec<crate::reviews::AgentRatingSummary>> {
+    let db = client()?;
+
+    // Get all reviews, compute averages in code
+    let resp = db.from(REVIEWS_TABLE)
+        .select("*")
+        .execute()
+        .await
+        .context("Failed to get reviews for top rated")?;
+
+    let body = resp.text().await?;
+    let reviews: Vec<crate::reviews::AgentReview> = serde_json::from_str(&body)?;
+
+    // Group by agent_id
+    let mut agent_reviews: std::collections::HashMap<String, Vec<&crate::reviews::AgentReview>> =
+        std::collections::HashMap::new();
+    for review in &reviews {
+        agent_reviews.entry(review.agent_id.clone())
+            .or_default()
+            .push(review);
+    }
+
+    let mut summaries: Vec<crate::reviews::AgentRatingSummary> = agent_reviews.into_iter()
+        .map(|(agent_id, revs)| {
+            let total = revs.len() as i64;
+            let avg = revs.iter().map(|r| r.rating as f64).sum::<f64>() / total as f64;
+            let avg_rounded = (avg * 10.0).round() / 10.0;
+
+            crate::reviews::AgentRatingSummary {
+                agent_id,
+                average_rating: avg_rounded,
+                total_reviews: total,
+                rating_distribution: crate::reviews::RatingDistribution {
+                    one_star: revs.iter().filter(|r| r.rating == 1).count() as i64,
+                    two_star: revs.iter().filter(|r| r.rating == 2).count() as i64,
+                    three_star: revs.iter().filter(|r| r.rating == 3).count() as i64,
+                    four_star: revs.iter().filter(|r| r.rating == 4).count() as i64,
+                    five_star: revs.iter().filter(|r| r.rating == 5).count() as i64,
+                },
+            }
+        })
+        .collect();
+
+    summaries.sort_by(|a, b| b.average_rating.partial_cmp(&a.average_rating).unwrap_or(std::cmp::Ordering::Equal));
+    summaries.truncate(limit);
+    Ok(summaries)
+}
+
 // ── PostgREST / Supabase (Cloud API) ────────────────────────────────
 
 
