@@ -1018,6 +1018,11 @@ async fn main() -> AnyResult<()> {
                 .with_route("/api/status", get(handle_registry_status))
                 // Export agent card
                 .with_route("/api/registry/{id}/export", get(handle_export_card))
+                // Reviews & ratings
+                .with_route("/api/registry/{id}/reviews", post(handle_create_review))
+                .with_route("/api/registry/{id}/reviews", get(handle_get_reviews))
+                .with_route("/api/registry/{id}/rating", get(handle_rating_summary))
+                .with_route("/api/reviews/top", get(handle_top_rated))
                 .with_route("/.well-known/farcaster.json", get(farcaster::miniapp::handle_farcaster_manifest))
                 .with_route("/miniapp", get(farcaster::miniapp::handle_miniapp_home))
                 .with_route("/miniapp/agent/{id}", get(farcaster::miniapp::handle_miniapp_agent))
@@ -1053,6 +1058,10 @@ async fn main() -> AnyResult<()> {
             println!("   GET  /api/tags/categories           — list categories");
             println!("   GET  /api/status                    — registry status page");
             println!("   GET  /api/registry/{{id}}/export      — export agent card");
+            println!("   POST /api/registry/{{id}}/reviews     — submit a review");
+            println!("   GET  /api/registry/{{id}}/reviews     — get agent reviews");
+            println!("   GET  /api/registry/{{id}}/rating      — get rating summary");
+            println!("   GET  /api/reviews/top               — top rated agents");
             println!("   GET  /sse                           — MCP Server (SSE)");
             println!("   GET  /health                        — health check");
 
