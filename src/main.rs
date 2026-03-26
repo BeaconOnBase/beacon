@@ -815,6 +815,58 @@ async fn handle_export_card(
     }
 }
 
+// ── Reviews & Ratings Handlers ──────────────────────────────────────
+
+async fn handle_create_review(
+    Path(id): Path<String>,
+    Json(req): Json<reviews::CreateReviewRequest>,
+) -> StdResult<impl IntoResponse, StatusCode> {
+    match reviews::AgentReviews::create_review(&id, &req).await {
+        Ok(review) => Ok(Json(review).into_response()),
+        Err(e) => {
+            tracing::error!("Create review failed: {}", e);
+            Err(StatusCode::BAD_REQUEST)
+        }
+    }
+}
+
+async fn handle_get_reviews(
+    Path(id): Path<String>,
+    Query(params): Query<reviews::ReviewQuery>,
+) -> StdResult<impl IntoResponse, StatusCode> {
+    let limit = params.limit.unwrap_or(20).min(100);
+    let offset = params.offset.unwrap_or(0);
+    match reviews::AgentReviews::get_reviews(&id, limit, offset).await {
+        Ok(reviews) => Ok(Json(reviews).into_response()),
+        Err(e) => {
+            tracing::error!("Get reviews failed: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+async fn handle_rating_summary(
+    Path(id): Path<String>,
+) -> StdResult<impl IntoResponse, StatusCode> {
+    match reviews::AgentReviews::get_summary(&id).await {
+        Ok(summary) => Ok(Json(summary).into_response()),
+        Err(e) => {
+            tracing::error!("Get rating summary failed: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+async fn handle_top_rated() -> StdResult<impl IntoResponse, StatusCode> {
+    match reviews::AgentReviews::get_top_rated(20).await {
+        Ok(top) => Ok(Json(top).into_response()),
+        Err(e) => {
+            tracing::error!("Get top rated failed: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
 #[tokio::main]
 async fn main() -> AnyResult<()> {
     tracing_subscriber::fmt::init();
