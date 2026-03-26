@@ -36,7 +36,7 @@ use axum::{
     extract::{Path, Query, State},
     http::{HeaderMap, StatusCode},
     response::IntoResponse,
-    routing::{get, post, put},
+    routing::{get, post, put, delete},
     Json,
 };
 use rust_mcp_sdk::{
@@ -1200,6 +1200,10 @@ async fn main() -> AnyResult<()> {
                 .with_route("/api/registry/{id}/stats", get(handle_agent_stats))
                 .with_route("/api/registry/{id}/events", get(handle_agent_events))
                 .with_route("/api/analytics/trending", get(handle_trending_agents))
+                // Webhooks
+                .with_route("/api/webhooks", post(handle_webhook_subscribe))
+                .with_route("/api/webhooks/{id}", delete(handle_webhook_unsubscribe))
+                .with_route("/api/registry/{id}/webhooks", get(handle_webhook_list))
                 // Tags & categories
                 .with_route("/api/registry/{id}/tags", put(handle_set_tags))
                 .with_route("/api/registry/{id}/tags", get(handle_get_tags))
@@ -1251,6 +1255,9 @@ async fn main() -> AnyResult<()> {
             println!("   GET  /api/registry/{{id}}/stats       — get agent analytics");
             println!("   GET  /api/registry/{{id}}/events      — get agent event log");
             println!("   GET  /api/analytics/trending        — trending agents");
+            println!("   POST /api/webhooks                  — subscribe to events");
+            println!("   DEL  /api/webhooks/{{id}}              — unsubscribe webhook");
+            println!("   GET  /api/registry/{{id}}/webhooks    — list agent webhooks");
             println!("   PUT  /api/registry/{{id}}/tags        — set agent tags");
             println!("   GET  /api/registry/{{id}}/tags        — get agent tags");
             println!("   GET  /api/tags/search               — search agents by tag");
