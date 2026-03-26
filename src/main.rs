@@ -17,6 +17,7 @@ mod eas;
 mod a2a;
 mod health;
 mod analytics;
+mod webhooks;
 mod tags;
 mod status;
 mod export;

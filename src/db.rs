@@ -476,6 +476,99 @@ pub async fn get_trending_agents(limit: usize) -> Result<Vec<crate::analytics::A
     Ok(rows)
 }
 
+// ── Webhook Subscriptions ───────────────────────────────────────────
+
+const WEBHOOK_SUBSCRIPTIONS_TABLE: &str = "webhook_subscriptions";
+const WEBHOOK_DELIVERIES_TABLE: &str = "webhook_deliveries";
+
+pub async fn insert_webhook_subscription(sub: &crate::webhooks::WebhookSubscription) -> Result<()> {
+    let db = client()?;
+
+    db.from(WEBHOOK_SUBSCRIPTIONS_TABLE)
+        .insert(json!([{
+            "id": sub.id,
+            "agent_id": sub.agent_id,
+            "url": sub.url,
+            "events": sub.events,
+            "secret": sub.secret,
+            "active": sub.active,
+        }]).to_string())
+        .execute()
+        .await
+        .context("Failed to insert webhook subscription")?;
+
+    Ok(())
+}
+
+pub async fn get_webhook_subscriptions(agent_id: &str) -> Result<Vec<crate::webhooks::WebhookSubscription>> {
+    let db = client()?;
+
+    let resp = db.from(WEBHOOK_SUBSCRIPTIONS_TABLE)
+        .eq("agent_id", agent_id)
+        .eq("active", "true")
+        .select("*")
+        .execute()
+        .await
+        .context("Failed to get webhook subscriptions")?;
+
+    let body = resp.text().await?;
+    let rows: Vec<crate::webhooks::WebhookSubscription> = serde_json::from_str(&body)?;
+    Ok(rows)
+}
+
+pub async fn deactivate_webhook(subscription_id: &str) -> Result<()> {
+    let db = client()?;
+
+    db.from(WEBHOOK_SUBSCRIPTIONS_TABLE)
+        .eq("id", subscription_id)
+        .update(json!({ "active": false }).to_string())
+        .execute()
+        .await
+        .context("Failed to deactivate webhook")?;
+
+    Ok(())
+}
+
+pub async fn insert_webhook_delivery(delivery: &crate::webhooks::WebhookDelivery) -> Result<()> {
+    let db = client()?;
+
+    db.from(WEBHOOK_DELIVERIES_TABLE)
+        .insert(json!([{
+            "id": delivery.id,
+            "subscription_id": delivery.subscription_id,
+            "event_type": delivery.event_type,
+            "payload": delivery.payload,
+            "status_code": delivery.status_code,
+            "success": delivery.success,
+            "error": delivery.error,
+        }]).to_string())
+        .execute()
+        .await
+        .context("Failed to insert webhook delivery")?;
+
+    Ok(())
+}
+
+pub async fn get_webhook_deliveries(
+    subscription_id: &str,
+    limit: usize,
+) -> Result<Vec<crate::webhooks::WebhookDelivery>> {
+    let db = client()?;
+
+    let resp = db.from(WEBHOOK_DELIVERIES_TABLE)
+        .eq("subscription_id", subscription_id)
+        .select("*")
+        .order("delivered_at.desc")
+        .range(0, limit - 1)
+        .execute()
+        .await
+        .context("Failed to get webhook deliveries")?;
+
+    let body = resp.text().await?;
+    let rows: Vec<crate::webhooks::WebhookDelivery> = serde_json::from_str(&body)?;
+    Ok(rows)
+}
+
 // ── Agent Tags ──────────────────────────────────────────────────────
 
 const AGENT_TAGS_TABLE: &str = "agent_tags";
