@@ -717,6 +717,44 @@ async fn handle_trending_agents(
     }
 }
 
+// ── Webhook Handlers ────────────────────────────────────────────────
+
+async fn handle_webhook_subscribe(
+    Json(req): Json<webhooks::SubscribeRequest>,
+) -> StdResult<impl IntoResponse, StatusCode> {
+    match webhooks::WebhookManager::subscribe(&req).await {
+        Ok(sub) => Ok(Json(sub).into_response()),
+        Err(e) => {
+            tracing::error!("Webhook subscribe failed: {}", e);
+            Err(StatusCode::BAD_REQUEST)
+        }
+    }
+}
+
+async fn handle_webhook_unsubscribe(
+    Path(id): Path<String>,
+) -> StdResult<impl IntoResponse, StatusCode> {
+    match webhooks::WebhookManager::unsubscribe(&id).await {
+        Ok(()) => Ok(Json(serde_json::json!({ "status": "ok" })).into_response()),
+        Err(e) => {
+            tracing::error!("Webhook unsubscribe failed: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+async fn handle_webhook_list(
+    Path(id): Path<String>,
+) -> StdResult<impl IntoResponse, StatusCode> {
+    match webhooks::WebhookManager::get_subscriptions(&id).await {
+        Ok(subs) => Ok(Json(subs).into_response()),
+        Err(e) => {
+            tracing::error!("Get webhooks failed: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
 // ── Tags & Categories Handlers ──────────────────────────────────────
 
 async fn handle_set_tags(
