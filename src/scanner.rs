@@ -80,8 +80,11 @@ pub fn scan_local(repo_path: &str) -> Result<RepoContext> {
         }
 
         if matches!(filename.as_str(), "cargo.toml" | "package.json" | "pyproject.toml" | "go.mod") {
-            ctx.package_manifest = read_file(path).ok();
-            println!("   ✓ Package manifest found: {}", filename);
+            // Prefer cargo.toml, otherwise use first found manifest
+            if ctx.package_manifest.is_none() || filename == "cargo.toml" {
+                ctx.package_manifest = read_file(path).ok();
+                println!("   ✓ Package manifest found: {}", filename);
+            }
             continue;
         }
 
