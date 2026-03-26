@@ -19,6 +19,7 @@ mod health;
 mod analytics;
 mod tags;
 mod status;
+mod export;
 
 mod tests;
 mod db;
@@ -788,6 +789,31 @@ async fn handle_registry_status() -> StdResult<impl IntoResponse, StatusCode> {
     }
 }
 
+// ── Export Agent Card Handlers ──────────────────────────────────────
+
+async fn handle_export_card(
+    Path(id): Path<String>,
+    Query(params): Query<export::ExportQuery>,
+) -> StdResult<impl IntoResponse, StatusCode> {
+    let format = params.format.as_deref().unwrap_or("json-ld");
+    match format {
+        "a2a" => match export::AgentExport::export_a2a(&id).await {
+            Ok(card) => Ok(Json(card).into_response()),
+            Err(e) => {
+                tracing::error!("Export A2A card failed: {}", e);
+                Err(StatusCode::INTERNAL_SERVER_ERROR)
+            }
+        },
+        _ => match export::AgentExport::export_card(&id).await {
+            Ok(card) => Ok(Json(card).into_response()),
+            Err(e) => {
+                tracing::error!("Export agent card failed: {}", e);
+                Err(StatusCode::INTERNAL_SERVER_ERROR)
+            }
+        },
+    }
+}
+
 #[tokio::main]
 async fn main() -> AnyResult<()> {
     tracing_subscriber::fmt::init();
@@ -937,6 +963,8 @@ async fn main() -> AnyResult<()> {
                 .with_route("/api/tags/categories", get(handle_categories))
                 // Status page
                 .with_route("/api/status", get(handle_registry_status))
+                // Export agent card
+                .with_route("/api/registry/{id}/export", get(handle_export_card))
                 .with_route("/.well-known/farcaster.json", get(farcaster::miniapp::handle_farcaster_manifest))
                 .with_route("/miniapp", get(farcaster::miniapp::handle_miniapp_home))
                 .with_route("/miniapp/agent/{id}", get(farcaster::miniapp::handle_miniapp_agent))
@@ -971,6 +999,7 @@ async fn main() -> AnyResult<()> {
             println!("   GET  /api/tags/popular              — popular tags");
             println!("   GET  /api/tags/categories           — list categories");
             println!("   GET  /api/status                    — registry status page");
+            println!("   GET  /api/registry/{{id}}/export      — export agent card");
             println!("   GET  /sse                           — MCP Server (SSE)");
             println!("   GET  /health                        — health check");
 
