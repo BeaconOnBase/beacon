@@ -25,6 +25,14 @@ const DEEPSEEK_URL: &str =
     "https://api.deepseek.com/chat/completions";
 const QWEN_URL: &str =
     "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions";
+const GROK_URL: &str =
+    "https://api.x.ai/v1/chat/completions";
+const LLAMA_URL: &str =
+    "https://api.llama.com/compat/v1/chat/completions";
+const MISTRAL_URL: &str =
+    "https://api.mistral.ai/v1/chat/completions";
+const ZAI_URL: &str =
+    "https://api.z.ai/api/paas/v4/chat/completions";
 
 pub async fn infer_capabilities(
     ctx: &RepoContext,
@@ -56,11 +64,27 @@ pub async fn infer_capabilities(
             let key = resolve_key(api_key, "DASHSCOPE_API_KEY", "qwen")?;
             call_qwen(&prompt, &key).await?
         }
+        "grok" => {
+            let key = resolve_key(api_key, "XAI_API_KEY", "grok")?;
+            call_grok(&prompt, &key).await?
+        }
+        "llama" => {
+            let key = resolve_key(api_key, "LLAMA_API_KEY", "llama")?;
+            call_llama(&prompt, &key).await?
+        }
+        "mistral" => {
+            let key = resolve_key(api_key, "MISTRAL_API_KEY", "mistral")?;
+            call_mistral(&prompt, &key).await?
+        }
+        "zai" => {
+            let key = resolve_key(api_key, "ZAI_API_KEY", "zai")?;
+            call_zai(&prompt, &key).await?
+        }
         "beacon-ai-cloud" => {
             call_beacon_cloud(ctx, &prompt).await?
         }
         other => anyhow::bail!(
-            "Unknown provider '{}'. Valid options: gemini, claude, openai, deepseek, qwen, beacon-ai-cloud",
+            "Unknown provider '{}'. Valid options: gemini, claude, openai, deepseek, qwen, grok, llama, mistral, zai, beacon-ai-cloud",
             other
         ),
     };
@@ -226,6 +250,138 @@ async fn call_deepseek(prompt: &str, api_key: &str) -> Result<AgentsManifest> {
 
     parse_manifest(text)
     }
+
+async fn call_grok(prompt: &str, api_key: &str) -> Result<AgentsManifest> {
+    let response = CLIENT
+        .post(GROK_URL)
+        .bearer_auth(api_key)
+        .json(&json!({
+            "model": "grok-4.20-reasoning",
+            "temperature": 0.2,
+            "response_format": { "type": "json_object" },
+            "messages": [
+                {
+                    "role": "system",
+                    "content": "You are an expert at analyzing software repositories. Always respond with valid JSON only."
+                },
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+            ]
+        }))
+        .send()
+        .await
+        .context("Failed to reach xAI Grok API")?;
+
+    check_status(&response, "Grok")?;
+
+    let raw: Value = response.json().await?;
+    let text = raw["choices"][0]["message"]["content"]
+        .as_str()
+        .context("Unexpected Grok response shape")?;
+
+    parse_manifest(text)
+}
+
+async fn call_llama(prompt: &str, api_key: &str) -> Result<AgentsManifest> {
+    let response = CLIENT
+        .post(LLAMA_URL)
+        .bearer_auth(api_key)
+        .json(&json!({
+            "model": "Llama-4-Maverick-17B-128E-Instruct-FP8",
+            "temperature": 0.2,
+            "response_format": { "type": "json_object" },
+            "messages": [
+                {
+                    "role": "system",
+                    "content": "You are an expert at analyzing software repositories. Always respond with valid JSON only."
+                },
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+            ]
+        }))
+        .send()
+        .await
+        .context("Failed to reach Meta Llama API")?;
+
+    check_status(&response, "Llama")?;
+
+    let raw: Value = response.json().await?;
+    let text = raw["choices"][0]["message"]["content"]
+        .as_str()
+        .context("Unexpected Llama response shape")?;
+
+    parse_manifest(text)
+}
+
+async fn call_mistral(prompt: &str, api_key: &str) -> Result<AgentsManifest> {
+    let response = CLIENT
+        .post(MISTRAL_URL)
+        .bearer_auth(api_key)
+        .json(&json!({
+            "model": "mistral-large-latest",
+            "temperature": 0.2,
+            "response_format": { "type": "json_object" },
+            "messages": [
+                {
+                    "role": "system",
+                    "content": "You are an expert at analyzing software repositories. Always respond with valid JSON only."
+                },
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+            ]
+        }))
+        .send()
+        .await
+        .context("Failed to reach Mistral AI API")?;
+
+    check_status(&response, "Mistral")?;
+
+    let raw: Value = response.json().await?;
+    let text = raw["choices"][0]["message"]["content"]
+        .as_str()
+        .context("Unexpected Mistral response shape")?;
+
+    parse_manifest(text)
+}
+
+async fn call_zai(prompt: &str, api_key: &str) -> Result<AgentsManifest> {
+    let response = CLIENT
+        .post(ZAI_URL)
+        .bearer_auth(api_key)
+        .json(&json!({
+            "model": "glm-4.5",
+            "temperature": 0.2,
+            "response_format": { "type": "json_object" },
+            "messages": [
+                {
+                    "role": "system",
+                    "content": "You are an expert at analyzing software repositories. Always respond with valid JSON only."
+                },
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+            ]
+        }))
+        .send()
+        .await
+        .context("Failed to reach Z.Ai GLM API")?;
+
+    check_status(&response, "Z.Ai")?;
+
+    let raw: Value = response.json().await?;
+    let text = raw["choices"][0]["message"]["content"]
+        .as_str()
+        .context("Unexpected Z.Ai response shape")?;
+
+    parse_manifest(text)
+}
 
     const BEACON_CLOUD_URL: &str = "https://api.beaconcloud.org";
 
