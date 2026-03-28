@@ -22,6 +22,7 @@ mod tags;
 mod status;
 mod export;
 mod reviews;
+mod ratelimit;
 
 mod x402;
 mod agentic_wallet;

@@ -894,6 +894,220 @@ pub async fn get_top_rated_agents(limit: usize) -> Result<Vec<crate::reviews::Ag
     Ok(summaries)
 }
 
+// ── Rate Limiting Tracker ───────────────────────────────────────────
+
+const USAGE_RECORDS_TABLE: &str = "api_usage";
+
+pub async fn upsert_usage_record(record: &crate::ratelimit::UsageRecord) -> Result<()> {
+    let db = client()?;
+
+    db.from(USAGE_RECORDS_TABLE)
+        .insert(json!([{
+            "id": record.id,
+            "agent_id": record.agent_id,
+            "ip_address": record.ip_address,
+            "endpoint": record.endpoint,
+            "method": record.method,
+            "window_start": record.window_start,
+            "request_count": record.request_count,
+            "last_request": record.last_request,
+        }]).to_string())
+        .execute()
+        .await
+        .context("Failed to upsert usage record")?;
+
+    Ok(())
+}
+
+pub async fn get_agent_request_count(agent_id: &str, period: &str) -> Result<i64> {
+    let db = client()?;
+    let since = period_to_timestamp(period);
+
+    let resp = db.from(USAGE_RECORDS_TABLE)
+        .eq("agent_id", agent_id)
+        .gte("window_start", &since)
+        .select("request_count")
+        .execute()
+        .await
+        .context("Failed to get agent request count")?;
+
+    let body = resp.text().await?;
+    let rows: Vec<serde_json::Value> = serde_json::from_str(&body)?;
+    let total: i64 = rows.iter()
+        .filter_map(|r| r["request_count"].as_i64())
+        .sum();
+    Ok(total)
+}
+
+pub async fn get_agent_top_endpoints(
+    agent_id: &str,
+    limit: usize,
+) -> Result<Vec<crate::ratelimit::EndpointUsage>> {
+    let db = client()?;
+
+    let resp = db.from(USAGE_RECORDS_TABLE)
+        .eq("agent_id", agent_id)
+        .select("endpoint,method,request_count")
+        .execute()
+        .await
+        .context("Failed to get agent top endpoints")?;
+
+    let body = resp.text().await?;
+    let rows: Vec<serde_json::Value> = serde_json::from_str(&body)?;
+
+    let mut endpoint_counts: std::collections::HashMap<(String, String), i64> =
+        std::collections::HashMap::new();
+    for row in &rows {
+        let ep = row["endpoint"].as_str().unwrap_or("").to_string();
+        let method = row["method"].as_str().unwrap_or("GET").to_string();
+        let count = row["request_count"].as_i64().unwrap_or(0);
+        *endpoint_counts.entry((ep, method)).or_insert(0) += count;
+    }
+
+    let mut results: Vec<crate::ratelimit::EndpointUsage> = endpoint_counts.into_iter()
+        .map(|((endpoint, method), request_count)| {
+            crate::ratelimit::EndpointUsage { endpoint, method, request_count }
+        })
+        .collect();
+
+    results.sort_by(|a, b| b.request_count.cmp(&a.request_count));
+    results.truncate(limit);
+    Ok(results)
+}
+
+pub async fn get_platform_request_count(period: &str) -> Result<i64> {
+    let db = client()?;
+    let since = period_to_timestamp(period);
+
+    let resp = db.from(USAGE_RECORDS_TABLE)
+        .gte("window_start", &since)
+        .select("request_count")
+        .execute()
+        .await
+        .context("Failed to get platform request count")?;
+
+    let body = resp.text().await?;
+    let rows: Vec<serde_json::Value> = serde_json::from_str(&body)?;
+    let total: i64 = rows.iter()
+        .filter_map(|r| r["request_count"].as_i64())
+        .sum();
+    Ok(total)
+}
+
+pub async fn get_unique_agents_count(period: &str) -> Result<i64> {
+    let db = client()?;
+    let since = period_to_timestamp(period);
+
+    let resp = db.from(USAGE_RECORDS_TABLE)
+        .gte("window_start", &since)
+        .select("agent_id")
+        .execute()
+        .await
+        .context("Failed to get unique agents count")?;
+
+    let body = resp.text().await?;
+    let rows: Vec<serde_json::Value> = serde_json::from_str(&body)?;
+    let unique: std::collections::HashSet<String> = rows.iter()
+        .filter_map(|r| r["agent_id"].as_str().map(|s| s.to_string()))
+        .collect();
+    Ok(unique.len() as i64)
+}
+
+pub async fn get_unique_ips_count(period: &str) -> Result<i64> {
+    let db = client()?;
+    let since = period_to_timestamp(period);
+
+    let resp = db.from(USAGE_RECORDS_TABLE)
+        .gte("window_start", &since)
+        .select("ip_address")
+        .execute()
+        .await
+        .context("Failed to get unique IPs count")?;
+
+    let body = resp.text().await?;
+    let rows: Vec<serde_json::Value> = serde_json::from_str(&body)?;
+    let unique: std::collections::HashSet<String> = rows.iter()
+        .filter_map(|r| r["ip_address"].as_str().map(|s| s.to_string()))
+        .collect();
+    Ok(unique.len() as i64)
+}
+
+pub async fn get_top_agents_by_requests(limit: usize) -> Result<Vec<crate::ratelimit::AgentRequestCount>> {
+    let db = client()?;
+    let since = period_to_timestamp("24h");
+
+    let resp = db.from(USAGE_RECORDS_TABLE)
+        .gte("window_start", &since)
+        .select("agent_id,request_count")
+        .execute()
+        .await
+        .context("Failed to get top agents")?;
+
+    let body = resp.text().await?;
+    let rows: Vec<serde_json::Value> = serde_json::from_str(&body)?;
+
+    let mut agent_counts: std::collections::HashMap<String, i64> = std::collections::HashMap::new();
+    for row in &rows {
+        if let Some(id) = row["agent_id"].as_str() {
+            let count = row["request_count"].as_i64().unwrap_or(0);
+            *agent_counts.entry(id.to_string()).or_insert(0) += count;
+        }
+    }
+
+    let mut results: Vec<crate::ratelimit::AgentRequestCount> = agent_counts.into_iter()
+        .map(|(agent_id, request_count)| crate::ratelimit::AgentRequestCount { agent_id, request_count })
+        .collect();
+
+    results.sort_by(|a, b| b.request_count.cmp(&a.request_count));
+    results.truncate(limit);
+    Ok(results)
+}
+
+pub async fn get_platform_top_endpoints(limit: usize) -> Result<Vec<crate::ratelimit::EndpointUsage>> {
+    let db = client()?;
+    let since = period_to_timestamp("24h");
+
+    let resp = db.from(USAGE_RECORDS_TABLE)
+        .gte("window_start", &since)
+        .select("endpoint,method,request_count")
+        .execute()
+        .await
+        .context("Failed to get platform top endpoints")?;
+
+    let body = resp.text().await?;
+    let rows: Vec<serde_json::Value> = serde_json::from_str(&body)?;
+
+    let mut endpoint_counts: std::collections::HashMap<(String, String), i64> =
+        std::collections::HashMap::new();
+    for row in &rows {
+        let ep = row["endpoint"].as_str().unwrap_or("").to_string();
+        let method = row["method"].as_str().unwrap_or("GET").to_string();
+        let count = row["request_count"].as_i64().unwrap_or(0);
+        *endpoint_counts.entry((ep, method)).or_insert(0) += count;
+    }
+
+    let mut results: Vec<crate::ratelimit::EndpointUsage> = endpoint_counts.into_iter()
+        .map(|((endpoint, method), request_count)| {
+            crate::ratelimit::EndpointUsage { endpoint, method, request_count }
+        })
+        .collect();
+
+    results.sort_by(|a, b| b.request_count.cmp(&a.request_count));
+    results.truncate(limit);
+    Ok(results)
+}
+
+fn period_to_timestamp(period: &str) -> String {
+    let now = chrono::Utc::now();
+    let duration = match period {
+        "24h" => chrono::Duration::hours(24),
+        "7d" => chrono::Duration::days(7),
+        "30d" => chrono::Duration::days(30),
+        _ => chrono::Duration::hours(24),
+    };
+    (now - duration).to_rfc3339()
+}
+
 // ── PostgREST / Supabase (Cloud API) ────────────────────────────────
 
 
