@@ -1060,6 +1060,30 @@ async fn handle_top_rated() -> StdResult<impl IntoResponse, StatusCode> {
     }
 }
 
+// ── Rate Limiting Handlers ──────────────────────────────────────────
+
+async fn handle_agent_usage(
+    Path(id): Path<String>,
+) -> StdResult<impl IntoResponse, StatusCode> {
+    match ratelimit::RateLimitTracker::get_agent_usage(&id).await {
+        Ok(usage) => Ok(Json(usage).into_response()),
+        Err(e) => {
+            tracing::error!("Get agent usage failed: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+async fn handle_platform_usage() -> StdResult<impl IntoResponse, StatusCode> {
+    match ratelimit::RateLimitTracker::get_platform_usage().await {
+        Ok(usage) => Ok(Json(usage).into_response()),
+        Err(e) => {
+            tracing::error!("Get platform usage failed: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
 #[tokio::main]
 async fn main() -> AnyResult<()> {
     tracing_subscriber::fmt::init();
