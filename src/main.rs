@@ -1252,6 +1252,9 @@ async fn main() -> AnyResult<()> {
                 .with_route("/api/registry/{id}/reviews", get(handle_get_reviews))
                 .with_route("/api/registry/{id}/rating", get(handle_rating_summary))
                 .with_route("/api/reviews/top", get(handle_top_rated))
+                // Rate limiting / usage
+                .with_route("/api/registry/{id}/usage", get(handle_agent_usage))
+                .with_route("/api/usage", get(handle_platform_usage))
                 .with_route("/.well-known/farcaster.json", get(farcaster::miniapp::handle_farcaster_manifest))
                 .with_route("/miniapp", get(farcaster::miniapp::handle_miniapp_home))
                 .with_route("/miniapp/agent/{id}", get(farcaster::miniapp::handle_miniapp_agent))
@@ -1300,6 +1303,8 @@ async fn main() -> AnyResult<()> {
             println!("   GET  /api/registry/{{id}}/reviews     — get agent reviews");
             println!("   GET  /api/registry/{{id}}/rating      — get rating summary");
             println!("   GET  /api/reviews/top               — top rated agents");
+            println!("   GET  /api/registry/{{id}}/usage       — agent API usage");
+            println!("   GET  /api/usage                     — platform usage stats");
             println!("   GET  /sse                           — MCP Server (SSE)");
             println!("   GET  /health                        — health check");
 
